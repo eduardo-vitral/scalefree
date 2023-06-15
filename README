@@ -1,0 +1,399 @@
+***********************************************************************
+* Scale-free Modeling Software                                        * 
+* to predict the intrinsic and projected kinematical quantities of    *
+* axisymmetric mass densities with anisotropic velocity distributions *
+* in spherical potentials.                                            *
+***********************************************************************
+
+***************************
+PART I: GENERAL INFORMATION
+***************************
+
+
+Authors
+-------
+ 
+* Roeland P. van der Marel,
+    1994-1995 : development of code
+    address   : Space Telescope Science Institute
+                Research Programs Office (RPO)
+                3700 San Martin Drive
+                Baltimore, MD 21218
+                Tel : (+1) 410 338 4931
+                Fax : (+1) 410 338 4596
+                e-mail   : marel@stsci.edu
+                homepage : http://sol.stsci.edu/~marel/
+ 
+* Jos H. J. de Bruijne
+    1994-1995 : testing and application of code
+    address   : Sterrewacht Leiden
+                Postbus 9513
+                2300 RA Leiden
+                The Netherlands
+                Tel : (+31) 71 5275878
+                Fax : (+31) 71 5275819
+                e-mail   : debruyne@strw.LeidenUniv.nl
+                homepage : http://www.strw.leidenuniv.nl/~debruyne/ 
+ 
+
+Summary of the method
+---------------------
+ 
+We consider the case of a scale-free spheroidal mass density with an
+anisotropic velocity distribution in scale-free spherical
+potential. The assumption of a spherical potential has the advantage
+that all integrals of motion are known explicitly. Two families of
+phase-space distribution functions are considered. The `case I'
+distribution functions are anisotropic generalizations of the
+flattened f(E,L_z) model, which they include as a special case. The
+`case II' distribution functions generate flattened
+constant-anisotropy models. Free parameters control the radial
+power-law slopes of the mass density and potential, the flattening of
+the mass distribution, and the velocity dispersion anisotropy. The
+models can describe the outer parts of galaxies and the density cusp
+structure near a central black hole, but also provide general insight
+into the dynamical properties of flattened systems. Because of their
+simplicity they provide a useful complementary approach to the
+construction of flattened self-consistent three-integral models for
+elliptical galaxies.
+
+
+References
+----------
+ 
+The method and some applications are discussed in the following paper:
+ 
+   `Scale-free dynamical models for galaxies: 
+    flattened densities in spherical potentials'
+       de Bruijne J., van der Marel R.P., de Zeeuw P.T. 
+       MNRAS, 282, 909-925, 1996 
+ 
+which can be retrieved form R. van der Marel's homepage.
+ 
+
+Acknowledgments
+---------------
+
+If you have found this software useful for your research, we would
+appreciate an acknowledgment to `use of the Scale-free Modeling
+Software developed by R.P. van der Marel and J.H.J. de Bruijne'.
+
+
+Bug Reports
+-----------
+ 
+Please send bug reports and important comments or questions to
+marel@stsci.edu
+ 
+ 
+Caveats
+-------
+ 
+This software comes without guarantee and on an `as is' basis. It is
+not being actively maintained or upgraded.
+ 
+All original testing of the code was done on a UNIX Sparc 2
+workstation with the SunOS operating system in the period
+1994-1995. In 1997 I ensured that the code would run on a Sun Ultra
+170 workstation with the solaris operating system. However, little
+detailed testing of the code was performed on this operating system.
+ 
+It is not guaranteed that the software will work without problems on
+other platforms, with different operating systems and different
+compilers. However, the code is close to standard fortran, so if any,
+only minor revisions will be necessary.
+ 
+I will consider all requests for use of this software. However, I do
+not allow people who have received the software from me to distribute
+it to third parties. Anyone who uses this software is encouraged to
+send me an email with their address, so that I can send reports
+of bugs and revisions.
+ 
+
+Program structure
+-----------------
+
+There are only a few files:
+
+  README      : This file. Contains instructions and a description of the
+                software.
+ 
+  scalefree.f : The fortran program that does all the calculations. 
+                the file also contains all necessary subroutines, some
+                of which are from the Numerical Recipes book by Press et
+                all.
+
+  makefile    : makefile that allows compilation of the program scalefree.f.
+
+  examp/      : directory with example input files for the program scalefree.f.
+
+After installation (see below) there will be two additional files:
+
+  scalefree.o : the object file generated from scalefree.f 
+  scalefree.e : the executable file generated from scalefree.f 
+
+
+Installation 
+------------
+
+To install the software issue the UNIX command
+
+   prompt> source install.com
+
+This will construct the executable scalefree.e and the object file scalefree.o.
+
+
+Examples
+--------
+
+The directory examp contains example input files. To run the program
+with the example input files, issue the UNIX commands:
+ 
+   prompt> example.e < examp/scalefree.in1.eg
+   prompt> example.e < examp/scalefree.in2.eg
+
+
+Known Bugs
+----------
+
+As discussed below, the calculations of the Gauss-Hermite moments of
+the projected velocity profiles (VPs) do not work well for certain
+parameter ranges. The intrinsic and projected velocity moments should
+always be highly accurate.
+
+
+*********************************
+PART II: Discussion of the method
+*********************************
+
+Construct galaxy models for flattened systems of test-particles
+in spherical potentials, as discussed in De Bruijne et al (1996).
+ 
+Let b be a reference length, rho_0 a reference mass density, and
+W a reference velocity.
+ 
+Introduce dimensionless units:
+ 
+    r = r_true / b
+    R = R_true / b
+    z = z_true / b
+    v = v_true / (SQRT(2)*W)
+    L = L_true / (SQRT(2)*W*b)
+    E = E_true / (W^2)
+    Psi = Psi_true / (W^2)
+    rho = rho_true / rho_0
+    f = f_true / [rho_0 (2 W^2)^{-3/2}]
+ 
+We consider two cases for the potential:
+ 
+KEPLERIAN POTENTIAL:
+    Let M be the total mass of the galaxy, such that Psi_true = GM/r_true. 
+    Then choose W = SQRT(GM/b). In these units:
+      Psi = 1 / r
+ 
+LOGARITHMIC POTENTIAL:
+    Let Vc be the circular velocity, such that Psi_true = - Vc^2 ln (r_true/b).
+    Then choose W = Vc. In these units:
+      Psi = - ln r
+ 
+Let the mass density fall off with logarithmic slope gamma, and be 
+stratified on spheroids with axial ratio q:
+    rho  = r^{-gamma} (sin(theta)^2 + [cos(theta)^2/q^2])^{-gamma/2}
+where theta is the polar angle such that:
+    R = r sin(theta)  and   z = r cos(theta)
+ 
+Since the potential is spherical, the quantities E, L^2, L_z^2 are 
+integrals of motion. Let L_max(E) be the maximum angular momentum that 
+can be attained by a star at energy E = Psi - v^2.
+In the Keplerian potential: 
+      L_max(E)^2 = 1 / 4E
+In the Logarithmic potential:
+      L_max(E)^2 = EXP(-2E -1) / 2
+ 
+We consider even DFs that are separable functions or quasi-separable 
+functions of E, zeta^2, eta^2:
+     case I  : f_e = g(E) zeta^{-2 beta} j(ecc^2 eta^2)
+     case II : f_e = g(E) zeta^{-2 beta} h(ecc^2 eta^2 / zeta^2)
+where:
+    zeta^2 = L^2/L_max(E)^2 
+    eta^2  = L_z^2/L_max(E)^2
+    ecc^2 = 1 - q^2
+and beta is a free parameter. With these ansatz's, the functions 
+j and h are determined uniquely (see De Bruijne et al. 1996).
+  
+To allow the construction of rotating models we adopt an odd part of
+the form:
+ 
+  f_o = f_e * (2s-1) * (eta^2)^t
+ 
+The parameters s and t determine the amount of streaming in 
+the model. The maximum streaming model has t=0 and s = 0 or 1.
+The total DF is f = f_e + f_o.
+ 
+All the intrinsic velocity moments for the models can be expressed as
+a power series in [ecc^2 SIN^2(theta)]. The program scalefree.f
+evaluates the velocity moments. These are then used to calculate the
+projected line-of-sight velocity moments on the sky as one-dimensional
+integrals. This can be done with essentially any given accuracy,
+either by Gauss-Legendre quadrature or Romberg integration (to be
+specified by the user). These parts of the program should work
+flawlessly for all allowed input parameter values.
+ 
+In addition to the calculation of the intrinsic and projected velocity
+moments, the program scalefree.f also reconstructs the projected
+line-of-sight VP shapes. This however is a rather more difficult
+problem than the calculation of the projected velocity moments
+themselves. The approach that we have used is to characterize each
+projected VP as a set of N values on an array. These values are then
+related to the (known) first N projected velocity moments through the
+solution of a so-called VanderMonde matrix. Once a VP is known on an
+array of velocity values, characteristic quantities such as the
+Gauss-Hermite moments (van der Marel & Franx 1993) can be evaluated in
+straightforward fashion.
+ 
+The difficulty lies in finding the solution of the VanderMonde matrix
+equation, which is an ill-conditioned problem. We have implemented two
+different approaches:
+
+(1) The first approach is to solve the VanderMonde matrix equation
+directly, without any regularization or other tampering with the
+equation itself. This yields solutions that are oscillatory on the
+scale of the velocity array spacing, due to the ill-conditioned nature
+of the problem (noise amplification). Although the VP itself is
+ridiculous, it turns out that quantities like the Gauss-Hermite
+moments (which are integrals over the VP) are often well and correctly
+determined. The question remains how many (N) projected velocity
+moments should be used to get the most accurate Gauss-Hermite moment
+determinations. The program chooses N by starting with a low value of
+N, and then solving the VanderMonde matrix equation repeatedly until
+the Gauss-Hermite moments have converged to within a preset
+tolerance. The reason that this approach works is because a
+Gauss-Hermite series bears a strong resemblance to a Fourier series.
+Gauss-Hermite moments h_i of higher order measure power in the VP on
+higher frequencies (Gerhard 1993). For high N, numerical errors cause
+the VanderMonde solution to become oscillatory on the scale of the
+velocity array spacing. This, however, does not influence the
+observables (gamma,V,sigma,h3,h4,....), because these only measure
+power on relatively low frequencies.
+
+(2) The second approach is to add a regularization term to the
+VanderMonde matrix equation, and then solve it in a least-squares
+sense (cf. Section 18.5 of Numerical Recipes). This works well, but
+leaves open the question how the regularization parameter must be
+chosen. The program gives two options: (a) Let the user give the
+regularization parameter by hand; (b) First start with the case of
+essentially no regularization. This yields an oscillatory solution
+with many local peaks. Then increase the amount of regularization in
+steps until the solution has become such that there are no more than 3
+significant local maxima (a local maximum is considered significant if
+it exceeds the value of its neighbors on the grid by a preset
+tolerance eps times the absolute VP maximum).
+
+The accuracy of algorithm (1) was tested as described in Appendix A of
+de Bruijne et al (1996). To recap, the results are as follows. A
+program was written that calculates the VP for the spherical (q=1)
+case of the models by direct evaluation of the three-dimensional
+integral along the line of sight that defines the VP. The
+(gamma,V,sigma,h3,h4,....) calculated with the program were found to
+be accurate, except for the case of a logarithmic potential and large
+anisotropy (beta < -4.0 or beta > 0.8). This has two reasons: (i) the
+logarithmic potential has no escape velocity so that it is more
+difficult to represent the VP on a finite velocity array; and (ii) the
+VP becomes discontinuous in the limit beta --> -infinity (only
+circular orbits), and singular in the limit beta --> 1 (only radial
+orbits) (e.g., van der Marel & Franx 1993). A second test was
+provided by the f(E,L_z) case (beta=0), for which the
+three-dimensional VP integral could be calculated as in Qian et
+al. (1995). Again, the (gamma,V,sigma,h3,h4,....) calculated with the
+VanderMonde algorithm were generally found to be accurate, with the
+exception of rather flattened models q < 0.6 in a logarithmic
+potential. This is understood from the fact that the VPs of these
+models become contrived and double-peaked for large flattening (Dehnen
+& Gerhard 1994). In both test cases inaccurate results were
+accompanied by non-zero values of h_1 and h_2, which should be zero by
+definition. For the general case one may therefore take the values of
+h_1 and h_2 as an indicator of the numerical accuracy of the
+VanderMonde algorithm. From this it was found that the algorithm (1)
+fails only for the case of a logarithmic potential, large flattening
+and large anisotropy.
+
+If knowledge of the actual shape of the VP is required (rather than
+just a measurement of Gauss-Hermite moments), then algorithm (2) is
+the only possible solution. The algorithm (2) was implemented into the
+software after the de Bruijne et al. paper was written, and no
+detailed study of its accuracy was made. It is likely that the
+algorithm can be optimized further, in particular the choice of the
+optimal regularization parameter. Users may want work on this
+themselves. It appears useful for many application to compare the
+results of approach (1) to those of approach (2), as a test of the
+accuracy of the results. Note that algorithm (2) is likely to be
+inaccurate for the same set of parameter ranges for which algorithm
+(1) is inaccurate (see above).
+
+
+References
+----------
+
+de Bruijne J., van der Marel R.P., de Zeeuw P.T., 1996, MNRAS, 282, 909
+
+Dehnen W., Gerhard O. E., 1994, MNRAS, 268, 1019
+
+Gerhard O. E., 1993, MNRAS, 265, 213
+
+Press W. H., Teukolsky S. A., Vetterling W. T., Flannery B. P., 
+     1992, Numerical Recipes, Second Edition. 
+     Cambridge University Press, Cambridge
+
+Qian E. E., de Zeeuw P. T., van der Marel R. P., Hunter C., 1995, 
+     MNRAS, 274, 602
+
+van der Marel R. P., Franx M., 1993, ApJ, 407, 525
+
+
+***********************************************
+PART III: Description of program in- and output
+***********************************************
+
+The program works in straightforward fashion. Several questions are
+posed on the command line, and the user merely needs to let the
+program know what he wishes it to do. The command line information,
+combined with the discussion in this file, should be sufficient to
+figure out what needs to be done. 
+
+After the user has entered the required model parameters, and has
+answered to the program how it must deal with the various numerical
+details, the user can let the program know what information he/she
+wants. If the user requests information on intrinsic properties, the
+program will return:
+ 
+         rho      <v_ph>     <v_r^2>    <v_th^2>    <v_ph^2>
+
+at a given angle theta in the meridional plane. If the user requests
+information on projected properties, the program will return for a
+given position angle from the major axis:
+
+     <rho>_p       <v>_p     <v^2>_p     <v^3>_p     <v^4>_p
+
+as well as the VP characteristics:
+
+     true      (gam,V,sig)
+     Gauss-fit (gam,V,sig)
+     h0, h1, h2, h3, ...  
+
+and the actual VanderMonmde matrix VP solution VP(v) (in a table). If
+additional properties are required (such as <v_r^4 v_phi^6 v_th2> or
+h_10), the fortran code can be easily modified to return those.
+
+Users are advised to run the program with the input files in examp/ to
+get a better idea of the workings of the program. The model in these
+input files is a spherical model with density proportional to r^{-4}
+in a Kepler potential. The results for this case can be compared to
+those in Table 1 of van der Marel & Franx (1993), who calculated the
+VP analytically as an integral over the line of sight. The input files
+in examp/ are for this model, but for the two different approaches of
+solving the vanderMonde matrix equation to get the VP. The
+Gauss-Hermite moments obtained with both approaches agree well, and
+with the results in van der Marel & Franx.
+
+
+                                       Roeland van der Marel.
