@@ -1159,7 +1159,7 @@ C
 C The function RHOPROJ calculates the projected mass density analytically.
 C The function PROJMOM calculates the projected velocity momemnts by
 C numerical 1D integration over the function TOINT. This uses
-C RHOVPOSRMOM, rho times the n-th line-of-sight velocity moment at a given
+C RHOVPOSTMOM, rho times the n-th line-of-sight velocity moment at a given
 C point in the galaxy.
 C
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
@@ -1261,10 +1261,10 @@ C
 C
       IF (ipot.EQ.1) THEN
         TOINT = (COS(tau)**(gamma-2.0D0+(0.5D0*DBLE(nord)))) *
-     &        RHOVPOSRMOM(theta,phi,nord)
+     &        RHOVPOSTMOM(theta,phi,nord)
       ELSE IF (ipot.EQ.2) THEN
         TOINT = (COS(tau)**(gamma-2.0D0)) *
-     &        RHOVPOSRMOM(theta,phi,nord)
+     &        RHOVPOSTMOM(theta,phi,nord)
       ELSE
         STOP 'ipot wrong value'
       END IF
@@ -1272,7 +1272,7 @@ C
       END
 
 
-      REAL*8 FUNCTION RHOVPOSRMOM(theta,phi,nord)
+      REAL*8 FUNCTION RHOVPOSTMOM(theta,phi,nord)
 C
 C Returns rho times the nord-th line-of-sight velocity moment at the
 C point with polar coordinates (theta,phi) in radians, and radius 1
@@ -1289,20 +1289,10 @@ C
       CT = COS(theta)
       SX = SIN(xinc)
       CX = COS(xinc)
-      CTT = COS(2.0D0*theta)
+      DEN = SQRT(ST*ST*SP*SP+(CT*SX - ST*CX*CP)**2.0D0)
 C
-      Afac = SQRT(ST*ST*SP*SP+(CT*SX - ST*CX*CP)**2.0D0)
-      Bfac = (ST*CT*CX*CX*CP*CP + ST*CT*(SP*SP - SX*SX) -
-     &       CTT*SX*CX*CP)/Afac
-      Cfac = SP*(ST*CP + ST*CX*CX*(-1.0D0*CP) + 
-     &       CT*SX*CX)/Afac
-C
-      IF (Afac.LT.0.0D0) THEN
-        Asign = -1.0D0        
-      ELSE
-        Asign = 1.0D0        
-      END IF
-      Afac = MAX(1.0D-20,ABS(Afac))
+      Bfac = SX*SP/DEN
+      Cfac = (CT*SX*CP - ST*CX)/DEN
 C
       IF (Bfac.LT.0.0D0) THEN
         Bsign = -1.0D0        
@@ -1318,16 +1308,20 @@ C
       END IF
       Cfac = MAX(1.0D-20,ABS(Cfac))
 C
-      RHOVPOSRMOM = 0.0D0
+      RHOVPOSTMOM = 0.0D0
       DO k=0,nord
-        DO j=0,nord-k
-          facln = binomln(nord,k) + binomln(nord-k,j) +
-     &            (DBLE(k)*LOG(Afac)) + (DBLE(j)*LOG(Bfac)) +
-     &            (DBLE(nord-k-j)*LOG(Cfac))
-          RHOVPOSRMOM = RHOVPOSRMOM + ( EXPP(facln)*
-     &       (Asign**k)*(Bsign**j)*(Csign**(nord-k-j))*
-     &       RHOVELMOM(theta,k,j,nord-k-j) )
-        END DO
+            DO j=0,nord-k
+                  IF (k.GT.0.0D0) THEN
+                        RHOVPOSTMOM = RHOVPOSTMOM + 0.0D0
+                  ELSE
+                        facln = binomln(nord,k) + binomln(nord-k,j) +
+     &                  (DBLE(j)*LOG(Bfac)) +
+     &                  (DBLE(nord-k-j)*LOG(Cfac))
+                        RHOVPOSTMOM = RHOVPOSTMOM + ( EXPP(facln)*
+     &                  (Bsign**j)*(Csign**(nord-k-j))*
+     &                  RHOVELMOM(theta,k,j,nord-k-j) )
+                  END IF
+            END DO
       END DO
 C
       END
