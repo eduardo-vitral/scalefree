@@ -41,7 +41,7 @@ with anisotropic velocity distributions in spherical potentials.
                 e-mail   : debruyne@strw.LeidenUniv.nl\
                 homepage : http://www.strw.leidenuniv.nl/~debruyne/
 
-* Eduardo F. Vitral,
+* Eduardo Vitral,
 
     >2023 :\
         &emsp; development of the Python interface\
@@ -188,7 +188,7 @@ The following files/folders are present in this package:
                 software.
 - `ROTATION.md`: Contains instructions for models with rotation.
 - `VPSHAPES.md`: Contains instructions for the computation of the velocity profiles.
-- `VPOS.md`: Contains the formalism for plane-of-sky velocity moements.
+- `VPOS.md`: Contains the formalism for plane-of-sky velocity moments.
 
 
 ### Installation 

@@ -51,11 +51,11 @@ $C_{\phi, \mathrm{POSr}} = (\sin (\phi ) \left(\sin (\theta ) \cos (\phi )+\sin 
 
 >$v_{\mathrm{POSt}}$:
 
-$C_{r} = 0$.
+$C_{r, \mathrm{POSt}} = 0$.
 
-$C_{\theta} = (\sin (i) \sin (\phi ))/C_{r, \mathrm{POSr}}$.
+$C_{\theta, \mathrm{POSt}} = (\sin (i) \sin (\phi ))/C_{r, \mathrm{POSr}}$.
 
-$C_{\phi} = (\cos (\theta ) \sin (i) \cos (\phi )-\sin (\theta ) \cos (i))/C_{r, \mathrm{POSr}}$.
+$C_{\phi, \mathrm{POSt}} = (\cos (\theta ) \sin (i) \cos (\phi )-\sin (\theta ) \cos (i))/C_{r, \mathrm{POSr}}$.
 
 These coefficients are then applied to equation (50) from 
 [De Bruijne et al. (1996)](https://ui.adsabs.harvard.edu/abs/1996MNRAS.282..909D/abstract) to recover the velocity moments in each direction (LOS, POSr and POSt).
