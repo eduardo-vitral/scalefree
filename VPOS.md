@@ -45,11 +45,9 @@ From those relations, it follows that the $C_{\mathrm{i}}$ terms for the POSr an
 
 $C_{r, \mathrm{POSr}} = \sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}$.
 
-$C_{\theta, \mathrm{POSr}} = (\sin (\theta ) \cos (\theta ) \cos ^2(i) \cos ^2(\phi )+\sin (\theta ) \cos (\theta ) \left(\sin ^2(\phi )-\sin ^2(i)\right)-\cos
-(2 \theta ) \sin (i) \cos (i) \cos (\phi )) / C_{r, \mathrm{POSr}}$.
+$C_{\theta, \mathrm{POSr}} = (\sin (\theta ) \cos (\theta ) \cos ^2(i) \cos ^2(\phi )+\sin (\theta ) \cos (\theta ) \left(\sin ^2(\phi )-\sin ^2(i)\right)-\cos(2 \theta ) \sin (i) \cos (i) \cos (\phi )) / C_{r, \mathrm{POSr}}$.
 
-$C_{\phi, \mathrm{POSr}} = (\sin (\phi ) \left(\sin (\theta ) \cos (\phi )+\sin (\theta ) \cos ^2(i) (-\cos (\phi ))+\cos (\theta ) \sin (i) \cos
-(i)\right))/C_{r, \mathrm{POSr}}$.
+$C_{\phi, \mathrm{POSr}} = (\sin (\phi ) \left(\sin (\theta ) \cos (\phi )+\sin (\theta ) \cos ^2(i) (-\cos (\phi ))+\cos (\theta ) \sin (i) \cos(i)\right))/C_{r, \mathrm{POSr}}$.
 
 >$v_{\mathrm{POSt}}$:
 
