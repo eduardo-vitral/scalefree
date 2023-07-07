@@ -294,7 +294,7 @@ the form:
 $f_o = f_e  (2s-1)  (\eta^2)^t$
  
 The parameters $s$ and $t$ determine the amount of streaming in 
-the model. The maximum streaming model has $t=0$ and $s = 0$ or $1$.
+the model. The maximum streaming model has $t=0$ and $s = 0$ or 1.
 The total DF is ${f = f_e + f_o}$.
  
 All the intrinsic velocity moments for the models can be expressed as
