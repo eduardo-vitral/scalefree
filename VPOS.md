@@ -29,9 +29,9 @@ $v_{z'} = C_{r} v_{r} + C_{\theta} v_{\theta} + C_{\phi} v_{\phi}$.
 
 where the $C_{\mathrm{i}}$ terms are given by their eqs. 49:
 
-$C_{r} = \sin (\theta ) \sin (i) \cos (\phi )+\cos (\theta ) \cos (i)$.\
-$C_{\theta} =\cos (\theta ) \sin (i) \cos (\phi )-\sin (\theta ) \cos (i)$.\
-$C_{\phi} = -\sin (i) \sin (\phi )$.
+$C_{r, \mathrm{LOS}} = \sin (\theta ) \sin (i) \cos (\phi )+\cos (\theta ) \cos (i)$.\
+$C_{\theta, \mathrm{LOS}} =\cos (\theta ) \sin (i) \cos (\phi )-\sin (\theta ) \cos (i)$.\
+$C_{\phi, \mathrm{LOS}} = -\sin (i) \sin (\phi )$.
 
 The proper motion directions in the radial and tangential directions can be written as:
 
@@ -43,23 +43,21 @@ From those relations, it follows that the $C_{\mathrm{i}}$ terms for the POSr an
 
 >$v_{\mathrm{POSr}}$:
 
-$C_{r} = \sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}$.
+$C_{r, \mathrm{POSr}} = \sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}$.
 
-$C_{\theta} = \frac{\sin (\theta ) \cos (\theta ) \cos ^2(i) \cos ^2(\phi )+\sin (\theta ) \cos (\theta ) \left(\sin ^2(\phi )-\sin ^2(i)\right)-\cos
-(2 \theta ) \sin (i) \cos (i) \cos (\phi )}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i)
-\cos (\phi ))^2}}$.
+$C_{\theta, \mathrm{POSr}} = (\sin (\theta ) \cos (\theta ) \cos ^2(i) \cos ^2(\phi )+\sin (\theta ) \cos (\theta ) \left(\sin ^2(\phi )-\sin ^2(i)\right)-\cos
+(2 \theta ) \sin (i) \cos (i) \cos (\phi )) / C_{r, \mathrm{POSr}}$.
 
-$C_{\phi} = \frac{\sin (\phi ) \left(\sin (\theta ) \cos (\phi )+\sin (\theta ) \cos ^2(i) (-\cos (\phi ))+\cos (\theta ) \sin (i) \cos
-(i)\right)}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}}$.
+$C_{\phi, \mathrm{POSr}} = (\sin (\phi ) \left(\sin (\theta ) \cos (\phi )+\sin (\theta ) \cos ^2(i) (-\cos (\phi ))+\cos (\theta ) \sin (i) \cos
+(i)\right))/C_{r, \mathrm{POSr}}$.
 
 >$v_{\mathrm{POSt}}$:
 
 $C_{r} = 0$.
 
-$C_{\theta} = \frac{\sin (i) \sin (\phi )}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}}$.
+$C_{\theta} = (\sin (i) \sin (\phi ))/C_{r, \mathrm{POSr}}$.
 
-$C_{\phi} = \frac{\cos (\theta ) \sin (i) \cos (\phi )-\sin (\theta ) \cos (i)}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin
-(\theta ) \cos (i) \cos (\phi ))^2}}$.
+$C_{\phi} = (\cos (\theta ) \sin (i) \cos (\phi )-\sin (\theta ) \cos (i))/C_{r, \mathrm{POSr}}$.
 
 These coefficients are then applied to equation (50) from 
 [De Bruijne et al. (1996)](https://ui.adsabs.harvard.edu/abs/1996MNRAS.282..909D/abstract):
