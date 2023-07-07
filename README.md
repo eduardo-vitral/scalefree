@@ -236,27 +236,27 @@ $W$ a reference velocity.
  
 Introduce dimensionless units:
  
-* $r = r_{true} / b$.
-* $R = R_{true} / b$.
-* $z = z_{true} / b$.
-* $v = v_{true} / (\sqrt{2}  W)$.
-* $L = L_{true} / (\sqrt{2}  W  b)$.
-* $E = E_{true} / (W^{2})$.
-* $\Psi = \Psi_{true} / (W^2)$.
-* $\rho = \rho_{true} / \rho_0$.
-* $f = f_{true} / [\rho_0 (2 W^2)^{-3/2}]$.
+* $r = r_{\mathrm{true}} / b$.
+* $R = R_{\mathrm{true}} / b$.
+* $z = z_{\mathrm{true}} / b$.
+* $v = v_{\mathrm{true}} / (\sqrt{2}  W)$.
+* $L = L_{\mathrm{true}} / (\sqrt{2}  W  b)$.
+* $E = E_{\mathrm{true}} / (W^{2})$.
+* $\Psi = \Psi_{\mathrm{true}} / (W^2)$.
+* $\rho = \rho_{\mathrm{true}} / \rho_0$.
+* $f = f_{\mathrm{true}} / [\rho_0 (2 W^2)^{-3/2}]$.
  
 We consider two cases for the potential:
  
 #### KEPLERIAN POTENTIAL:
 
-Let $M$ be the total mass of the galaxy, such that $\Psi_{true} = G  M / r_{true}$.\
+Let $M$ be the total mass of the galaxy, such that $\Psi_{\mathrm{true}} = G  M / r_{\mathrm{true}}$.\
 Then choose $W = \sqrt{GM/b}$.\
 In these units: $\Psi = 1 / r$.
  
 #### LOGARITHMIC POTENTIAL:
 
-Let $V_c$ be the circular velocity, such that $\Psi_{true} = - V_{c}^2  \ln{(r_{true}/b)}$.
+Let $V_c$ be the circular velocity, such that $\Psi_{\mathrm{true}} = - V_{c}^2  \ln{(r_{\mathrm{true}}/b)}$.
 Then choose $W = V_c$.\
 In these units: $\Psi = - \ln{(r)}$.
 
@@ -335,7 +335,6 @@ There are two main routines in the `scalefree.py` program:
 
 ```python
 scalefree.hermite(input, exec=False)
-
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
 
@@ -383,8 +382,8 @@ scalefree.vprofile(
     maxmom="0",
     theta="0",
     xi="0",
-    exec=False)
-
+    exec=False,
+)
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
     Note: all results are at an
