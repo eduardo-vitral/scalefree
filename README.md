@@ -1,5 +1,4 @@
 # scalefree :dizzy:
-***
 
 <img alt="logo" align="right" src="./images/hstpromo.jpeg" width="18%" />
 
@@ -9,9 +8,8 @@
 projected kinematical quantities of axisymmetric mass densities\
 with anisotropic velocity distributions in spherical potentials.
 
-* *Gauss-Hermite fitting routine.
+* Gauss-Hermite fitting routine.
 
-***
 
 ## PART I: GENERAL INFORMATION
 
@@ -181,12 +179,16 @@ The following files/folders are present in this package:
                 al.*](https://ui.adsabs.harvard.edu/abs/1992nrfa.book.....P/abstract)
 - `examp/`: directory with example input files for the program `scalefree.f`
     and `fitvp.f`.
+- `images/`: directory with images of the *HSTPROMO* logo and the geometry considered in `scalefree`.
 - `scalefree.py`: The `Python` program that translates the `Fortran` outputs.
 - `install.py`: The `Python` program that installs the code.
 
 
 - `README.md`: This file. Contains instructions and a description of the
                 software.
+- `ROTATION.md`: Contains instructions for models with rotation.
+- `VPSHAPES.md`: Contains instructions for the computation of the velocity profiles.
+- `VPOS.md`: Contains the formalism for plane-of-sky velocity moements.
 
 
 ### Installation 
@@ -294,7 +296,7 @@ where:
 and $\beta$ is a free parameter. With these ansatz's, the functions 
 $j$ and $h$ are determined uniquely (see [De Bruijne et al, 1996](https://ui.adsabs.harvard.edu/abs/1996MNRAS.282..909D/abstract)).
 
-To allow models with roation, please read this [link](./ROTATION.md).
+To allow models with rotation, please read this [link](./ROTATION.md).
  
 In addition to the calculation of the intrinsic and projected velocity
 moments, the program `scalefree.f` also reconstructs the projected

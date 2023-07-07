@@ -1,5 +1,4 @@
 # ROTATING MODELS
-***
 
 To allow the construction of rotating models we adopt an odd part of
 the form:

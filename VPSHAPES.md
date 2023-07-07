@@ -1,5 +1,4 @@
 # VELOCITY PROFILE SHAPES
-***
 
 In addition to the calculation of the intrinsic and projected velocity
 moments, the program `scalefree.f` also reconstructs the projected

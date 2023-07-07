@@ -1,5 +1,4 @@
 # PLANE OF SKY VELOCITY MOMENTS (POSr AND POSt)
-***
 
 In the current section, we aim to extend their formalism to proper motions, 
 providing the corresponding equations in the POS. 
@@ -46,25 +45,25 @@ From those relations, it follows that the $C_{\mathrm{i}}$ terms for the POSr an
 
 $C_{r} = \sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}$.
 
-$C_{\theta} = \displaystyle{\frac{\sin (\theta ) \cos (\theta ) \cos ^2(i) \cos ^2(\phi )+\sin (\theta ) \cos (\theta ) \left(\sin ^2(\phi )-\sin ^2(i)\right)-\cos
+$C_{\theta} = \frac{\sin (\theta ) \cos (\theta ) \cos ^2(i) \cos ^2(\phi )+\sin (\theta ) \cos (\theta ) \left(\sin ^2(\phi )-\sin ^2(i)\right)-\cos
 (2 \theta ) \sin (i) \cos (i) \cos (\phi )}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i)
-\cos (\phi ))^2}}}$.
+\cos (\phi ))^2}}$.
 
-$C_{\phi} = \displaystyle{\frac{\sin (\phi ) \left(\sin (\theta ) \cos (\phi )+\sin (\theta ) \cos ^2(i) (-\cos (\phi ))+\cos (\theta ) \sin (i) \cos
-(i)\right)}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}}}$.
+$C_{\phi} = \frac{\sin (\phi ) \left(\sin (\theta ) \cos (\phi )+\sin (\theta ) \cos ^2(i) (-\cos (\phi ))+\cos (\theta ) \sin (i) \cos
+(i)\right)}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}}$.
 
 >$v_{\mathrm{POSt}}$:
 
 $C_{r} = 0$.
 
-$C_{\theta} = \displaystyle{\frac{\sin (i) \sin (\phi )}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}}}$.
+$C_{\theta} = \frac{\sin (i) \sin (\phi )}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin (\theta ) \cos (i) \cos (\phi ))^2}}$.
 
-$C_{\phi} = \displaystyle{\frac{\cos (\theta ) \sin (i) \cos (\phi )-\sin (\theta ) \cos (i)}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin
-(\theta ) \cos (i) \cos (\phi ))^2}}}$.
+$C_{\phi} = \frac{\cos (\theta ) \sin (i) \cos (\phi )-\sin (\theta ) \cos (i)}{\sqrt{\sin ^2(\theta ) \sin ^2(\phi )+(\cos (\theta ) \sin (i)-\sin
+(\theta ) \cos (i) \cos (\phi ))^2}}$.
 
 These coefficients are then applied to equation (50) from 
 [De Bruijne et al. (1996)](https://ui.adsabs.harvard.edu/abs/1996MNRAS.282..909D/abstract):
 
-$\rho\left<v_{\mathrm{dim}}^{n}\right> = \sum_{j = 0}^{n} \sum_{k = 0}^{n - j} \left({n \atop j}\right) \left({n - j \atop k}\right) C_{r}^{j} C_{\theta}^{k} C_{\phi}^{n-j-k} \rho\left<v_{r}^{j} v_{\theta}^{k} v_{\phi}^{n-j-k}\right>$.
+$\rho\left<v_{\mathrm{dim}}^{n}\right> = \sum_{j = 0}^{n} \sum_{k = 0}^{n - j} \left(\substack{n \\ j}\right) \left(\substack{n - j \\ k}\right) C_{r}^{j} C_{\theta}^{k} C_{\phi}^{n-j-k} \rho\left<v_{r}^{j} v_{\theta}^{k} v_{\phi}^{n-j-k}\right>$.
 
 to recover the velocity moments in each direction (LOS, POSr and POSt).
