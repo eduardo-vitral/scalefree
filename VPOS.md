@@ -60,6 +60,6 @@ $C_{\phi} = (\cos (\theta ) \sin (i) \cos (\phi )-\sin (\theta ) \cos (i))/C_{r,
 These coefficients are then applied to equation (50) from 
 [De Bruijne et al. (1996)](https://ui.adsabs.harvard.edu/abs/1996MNRAS.282..909D/abstract):
 
-$\rho\left<v_{\mathrm{dim}}^{n}\right> = \sum_{j = 0}^{n} \sum_{k = 0}^{n - j} \left(\substack{n \\ j}\right) \left(\substack{n - j \\ k}\right) C_{r}^{j} C_{\theta}^{k} C_{\phi}^{n-j-k} \rho\left<v_{r}^{j} v_{\theta}^{k} v_{\phi}^{n-j-k}\right>$.
+$\rho\left<v_{\mathrm{dim}}^{n}\right> = \sum_{j = 0}^{n} \sum_{k = 0}^{n - j} \left(nj\right) \left(njk\right) C_{r}^{j} C_{\theta}^{k} C_{\phi}^{n-j-k} \rho\left<v_{r}^{j} v_{\theta}^{k} v_{\phi}^{n-j-k}\right>$.
 
 to recover the velocity moments in each direction (LOS, POSr and POSt).

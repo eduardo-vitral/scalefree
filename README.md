@@ -1,6 +1,6 @@
 # scalefree :dizzy:
 
-<img alt="logo" align="right" src="./images/hstpromo.jpeg" width="18%" />
+<img alt="logo" align="right" src="./images/hstpromo.jpeg" width="15%" />
 
 ### This is a software developped by the [HSTPROMO](https://www.stsci.edu/~marel/hstpromo.html) collaboration
 
