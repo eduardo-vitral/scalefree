@@ -39,6 +39,7 @@ def vprofile(
     maxmom="0",
     theta="0",
     xi="0",
+    exec=False,
 ):
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
@@ -93,6 +94,8 @@ def vprofile(
     xi: str
         Angle on the projected plane
         (in degrees) (0 = major axis)
+    exec: boolean
+        True, if the user wants to generate new .e files.
 
     Returns
     -------
@@ -123,7 +126,7 @@ def vprofile(
                 - dispersion
             h_moments: First 0-10 moments of the
                        Gauss-Hermite fit.
-                - hi, with i in [0, 10]
+                - hi, with i in [0, 6]
             vinfo: Velocity distribution function
                 - x
                 - f(x)
@@ -172,18 +175,19 @@ def vprofile(
         h_moments = np.zeros(7)
         for i in range(len(dimensions)):
             prefix = "./scalefree_" + sufix + "/"
-            p = subprocess.run(
-                ["rm", prefix + "scalefree.e"],
-                text=True,
-                input="y",
-                capture_output=True,
-            )
-            p = subprocess.run(
-                ["gfortran", prefix + "scalefree.f", "-o", prefix + "scalefree.e"],
-                text=True,
-                input="y",
-                capture_output=True,
-            )
+            if exec is True:
+                p = subprocess.run(
+                    ["rm", prefix + "scalefree.e"],
+                    text=True,
+                    input="y",
+                    capture_output=True,
+                )
+                p = subprocess.run(
+                    ["gfortran", prefix + "scalefree.f", "-o", prefix + "scalefree.e"],
+                    text=True,
+                    input="y",
+                    capture_output=True,
+                )
             p = subprocess.run(
                 [prefix + "scalefree.e", "scalefree.f"],
                 text=True,
@@ -250,7 +254,7 @@ def vprofile(
     return vinfo
 
 
-def hermite(input):
+def hermite(input, exec=False):
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
 
@@ -261,6 +265,8 @@ def hermite(input):
         Expected file shape:
         --> First line (header): "	v  VP(v)"
         --> 1st column: x / 2nd column: f(x)
+    exec: boolean
+        True, if the user wants to generate new .e files.
 
     Returns
     -------
@@ -279,23 +285,24 @@ def hermite(input):
             - hi, with i in [0, 10]
     """
     prefix = "./ghermite/"
-    p = subprocess.run(
-        ["rm", prefix + "fitvp.e"],
-        text=True,
-        input="y",
-        capture_output=True,
-    )
-    p = subprocess.run(
-        ["gfortran", prefix + "fitvp.f", "-o", prefix + "fitvp.e"],
-        text=True,
-        input="y",
-        capture_output=True,
-    )
+    if exec is True:
+        p = subprocess.run(
+            ["rm", prefix + "fitvp.e"],
+            text=True,
+            input="y",
+            capture_output=True,
+        )
+        p = subprocess.run(
+            ["gfortran", prefix + "fitvp.f", "-o", prefix + "fitvp.e"],
+            text=True,
+            input="y",
+            capture_output=True,
+        )
     p = subprocess.run(
         [prefix + "fitvp.e", "fitvp.f"],
         text=True,
         input=input,
-        capture_output=True,
+        capture_output=True,shell=True,
     )
     split = str(p).split()
 
