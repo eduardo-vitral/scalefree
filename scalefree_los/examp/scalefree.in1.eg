@@ -8,7 +8,7 @@
 1                                       [LOS integration: 0:Romberg; 1:GL]
 0                                       [nGL = default]
 1                                       [VP calculation algorithm]
-0                                       [max # moments = default]
+0                                      [max # moments = default]
 0                                       [show intrinsic quantities]
 0.0D0                                   [theta]
 1                                       [show more results ?]
