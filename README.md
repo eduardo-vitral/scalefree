@@ -231,8 +231,8 @@ Introduce dimensionless units:
 * $r = r_{true} / b$.
 * $R = R_{true} / b$.
 * $z = z_{true} / b$.
-* $v = v_{true} / (\sqrt{2} \, W)$.
-* $L = L_{true} / (\sqrt{2} \, W \, b)$.
+* $v = v_{true} / (\sqrt{2}  W)$.
+* $L = L_{true} / (\sqrt{2}  W  b)$.
 * $E = E_{true} / (W^{2})$.
 * $\Psi = \Psi_{true} / (W^2)$.
 * $\rho = \rho_{true} / \rho_0$.
@@ -242,13 +242,13 @@ We consider two cases for the potential:
  
 #### KEPLERIAN POTENTIAL:
 
-Let $M$ be the total mass of the galaxy, such that $\Psi_{true} = G \, M / r_{true}$.\
+Let $M$ be the total mass of the galaxy, such that $\Psi_{true} = G  M / r_{true}$.\
 Then choose $W = \sqrt{GM/b}$.\
 In these units: $\Psi = 1 / r$.
  
 #### LOGARITHMIC POTENTIAL:
 
-Let $V_c$ be the circular velocity, such that $\Psi_{true} = - V_{c}^2 \, \ln{(r_{true}/b)}$.
+Let $V_c$ be the circular velocity, such that $\Psi_{true} = - V_{c}^2  \ln{(r_{true}/b)}$.
 Then choose $W = V_c$.\
 In these units: $\Psi = - \ln{(r)}$.
 
@@ -265,7 +265,7 @@ $R = r \sin(\theta)$ &nbsp; and &nbsp; $z = r \cos(\theta)$.
  
 Since the potential is spherical, the quantities $E$, $L^2$, $L_z^2$ are 
 integrals of motion. Let $L_{max}(E)$ be the maximum angular momentum that 
-can be attained by a star at energy $E = \Psi - v^2$.\
+can be attained by a star at energy $E = \Psi - v^2$.
 
 * In the **Keplerian** potential: $L^2_{max}(E) = 1 / (4E)$.
 
@@ -274,12 +274,12 @@ can be attained by a star at energy $E = \Psi - v^2$.\
 We consider even DFs that are separable functions or quasi-separable 
 functions of $E$, $\zeta^2$, $\eta^2$:
 
-* **case I**  : $f_e = g(E) \, \zeta^{-2 \beta} \, j(ecc^2 \, \eta^2)$
+* **case I**  : $f_e = g(E)  \zeta^{-2 \beta}  j(ecc^2  \eta^2)$
 
-* **case II** : $f_e = g(E) \, \zeta^{-2 \beta} \, h(ecc^2 \, \eta^2 / \zeta^2)$
+* **case II** : $f_e = g(E)  \zeta^{-2 \beta}  h(ecc^2  \eta^2 / \zeta^2)$
 
 where:
-* $\zeta^2 = L^2/L^2_{max}(E) $
+* $\zeta^2 = L^2/L^2_{max}(E)$
 
 * $\eta^2  = L_z^2/L^2_{max}(E)$
 
@@ -291,14 +291,14 @@ $j$ and $h$ are determined uniquely (see [De Bruijne et al, 1996](https://ui.ads
 To allow the construction of rotating models we adopt an odd part of
 the form:
  
-  $f_o = f_e  (2s-1) \, (\eta^2)^t$
+$f_o = f_e  (2s-1)  (\eta^2)^t$
  
 The parameters $s$ and $t$ determine the amount of streaming in 
 the model. The maximum streaming model has $t=0$ and $s = 0$ or $1$.
-The total DF is $f = f_e + f_o$.
+The total DF is ${f = f_e + f_o}$.
  
 All the intrinsic velocity moments for the models can be expressed as
-a power series in $[ecc^2 \sin^2(\theta)]$. The program `scalefree.f`
+a power series in ${[ecc^2 \sin^2(\theta)]}$. The program `scalefree.f`
 evaluates the velocity moments. These are then used to calculate the
 projected line-of-sight and plane-of-sky velocity moments on the sky 
 as one-dimensional
@@ -346,7 +346,7 @@ higher frequencies
 For high $N$, numerical errors cause
 the VanderMonde solution to become oscillatory on the scale of the
 velocity array spacing. This, however, does not influence the
-observables ($\gamma$, $V$, $\sigma$, $h_3$, $h_4$,...), 
+observables (${\gamma}$, ${V}$, ${\sigma}$, ${h_3}$, ${h_4}$,...), 
 because these only measure
 power on relatively low frequencies.
 
@@ -371,30 +371,32 @@ To recapitulate, the results are as follows. A
 program was written that calculates the VP for the spherical ($q=1$)
 case of the models by direct evaluation of the three-dimensional
 integral along the line of sight that defines the VP. The
-($\gamma$, $V$, $\sigma$, $h_3$, $h_4$,...)
+(${\gamma}$, ${V}$, ${\sigma}$, ${h_3}$, ${h_4}$,...)
  calculated with the program were found to
 be accurate, except for the case of a logarithmic potential and large
-anisotropy ($\beta < -4.0$ or $\beta > 0.8$). This has two reasons: 
+anisotropy (${\beta < -4.0}$ or ${\beta > 0.8}$). This has two reasons: 
 * (i) the logarithmic potential has no escape velocity so that it is more
 difficult to represent the VP on a finite velocity array;
-* (ii) the VP becomes discontinuous in the limit $\beta \rightarrow -\infty$ (only
-circular orbits), and singular in the limit $\beta \rightarrow 1$ (only radial
+* (ii) the VP becomes discontinuous in the limit ${\beta \rightarrow -\infty}$ (only
+circular orbits), and singular in the limit ${\beta \rightarrow 1}$ (only radial
 orbits) (e.g., 
 [van der Marel & Franx, 1993](https://ui.adsabs.harvard.edu/abs/1993ApJ...407..525V/abstract)).
 
 A second test was
-provided by the $f(E,L_z)$ case ($\beta=0$), for which the
+provided by the ${f(E,L_z)}$ case (${\beta=0}$), for which the
 three-dimensional VP integral could be calculated as in [Qian et
-al. (1995)](https://ui.adsabs.harvard.edu/abs/1995MNRAS.274..602Q/abstract). Again, the ($\gamma$, $V$, $\sigma$, $h_3$, $h_4$,....)
+al. (1995)](https://ui.adsabs.harvard.edu/abs/1995MNRAS.274..602Q/abstract). Again, the 
+(${\gamma}$, ${V}$, ${\sigma}$, ${h_3}$, ${h_4}$,...)
 calculated with the
 VanderMonde algorithm were generally found to be accurate, with the
-exception of rather flattened models $q < 0.6$ in a logarithmic
+exception of rather flattened models ${q < 0.6}$ in a logarithmic
 potential. This is understood from the fact that the VPs of these
 models become contrived and double-peaked for large flattening ([Dehnen
-& Gerhard, 1994](https://ui.adsabs.harvard.edu/abs/1994MNRAS.268.1019D/abstract)). In both test cases inaccurate results were
-accompanied by non-zero values of $h_1$ and $h_2$, which should be zero by
+& Gerhard, 1994](https://ui.adsabs.harvard.edu/abs/1994MNRAS.268.1019D/abstract)). 
+In both test cases inaccurate results were
+accompanied by non-zero values of ${h_1}$ and ${h_2}$, which should be zero by
 definition. For the general case one may therefore take the values of
-$h_1$ and $h_2$ as an indicator of the numerical accuracy of the
+${h_1}$ and ${h_2}$ as an indicator of the numerical accuracy of the
 VanderMonde algorithm. From this it was found that the algorithm (1)
 fails only for the case of a logarithmic potential, large flattening
 and large anisotropy.
