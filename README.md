@@ -1,4 +1,4 @@
-# scalefree
+# scalefree :dizzy:
 
 ***********************************************************************
 * Scale-free Modeling Software to predict the intrinsic and 
@@ -13,7 +13,7 @@ with anisotropic velocity distributions in spherical potentials.
 
 * Roeland P. van der Marel,
 
-    1994-1995 :\
+    >1994-1995 :\
         &emsp; development of code\
     address   : Space Telescope Science Institute\
                 Research Programs Office (RPO)\
@@ -26,7 +26,7 @@ with anisotropic velocity distributions in spherical potentials.
  
 * Jos H. J. de Bruijne,
 
-    1994-1995 :\
+    >1994-1995 :\
         &emsp; testing and application of code\
     address   : Sterrewacht Leiden\
                 Postbus 9513\
@@ -39,7 +39,7 @@ with anisotropic velocity distributions in spherical potentials.
 
 * Eduardo F. Vitral,
 
-    2023 :\
+    >2023 :\
         &emsp; development of the Python interface\
         &emsp; implementation of plane-of-sky routines\
         &emsp; testing and application of code\
@@ -91,7 +91,7 @@ Software developed by R.P. van der Marel, J.H.J. de Bruijne and E. Vitral"*,
 along with a citation to the paper from the **References** section above.
 The respective `BibTeX` format is:
 
-```
+```bibtex
 @ARTICLE{1996MNRAS.282..909D,
        author = {{de Bruijne}, Jos H.~J. and {van der Marel}, Roeland P. and {de Zeeuw}, P. Tim},
         title = "{Scale-free dynamical models for galaxies: flattened densities in spherical potentials}",
@@ -188,7 +188,7 @@ The following files/folders are present in this package:
 To install the software, run the `install.py` file.\
 The code will ask you the path where your scalefree files are installed.\
 Once you type it and hit **ENTER**, the following output should be produced:
-```
+```console
 Provide the path where your scalefree files are installed.
 For example: /home/yourname/code-packages/scalefree/ 
 
@@ -274,16 +274,16 @@ can be attained by a star at energy $E = \Psi - v^2$.
 We consider even DFs that are separable functions or quasi-separable 
 functions of $E$, $\zeta^2$, $\eta^2$:
 
-* **case I**  : $f_e = g(E)  \zeta^{-2 \beta}  j(ecc^2  \eta^2)$
+* **case I**  : $f_e = g(E)  \zeta^{-2 \beta}  j(e^2  \eta^2)$
 
-* **case II** : $f_e = g(E)  \zeta^{-2 \beta}  h(ecc^2  \eta^2 / \zeta^2)$
+* **case II** : $f_e = g(E)  \zeta^{-2 \beta}  h(e^2  \eta^2 / \zeta^2)$
 
 where:
 * $\zeta^2 = L^2/L^2_{max}(E)$
 
 * $\eta^2  = L_z^2/L^2_{max}(E)$
 
-* $ecc^2 = 1 - q^2$
+* $e^2 = 1 - q^2$
 
 and $\beta$ is a free parameter. With these ansatz's, the functions 
 $j$ and $h$ are determined uniquely (see [De Bruijne et al, 1996](https://ui.adsabs.harvard.edu/abs/1996MNRAS.282..909D/abstract)).
@@ -294,11 +294,11 @@ the form:
 $f_o = f_e  (2s-1)  (\eta^2)^t$
  
 The parameters $s$ and $t$ determine the amount of streaming in 
-the model. The maximum streaming model has $t=0$ and $s = 0$ or 1.
+the model. The maximum streaming model has $t=0$ and $s = 0$ or $1$.
 The total DF is ${f = f_e + f_o}$.
  
 All the intrinsic velocity moments for the models can be expressed as
-a power series in ${[ecc^2 \sin^2(\theta)]}$. The program `scalefree.f`
+a power series in ${[e^2 \sin^2(\theta)]}$. The program `scalefree.f`
 evaluates the velocity moments. These are then used to calculate the
 projected line-of-sight and plane-of-sky velocity moments on the sky 
 as one-dimensional
@@ -417,20 +417,15 @@ inaccurate for the same set of parameter ranges for which algorithm
 
 ### References
 
-* de Bruijne J., van der Marel R.P., de Zeeuw P.T., 1996, MNRAS, 282, 909
-
-* Dehnen W., Gerhard O. E., 1994, MNRAS, 268, 1019
-
-* Gerhard O. E., 1993, MNRAS, 265, 213
-
-* Press W. H., Teukolsky S. A., Vetterling W. T., Flannery B. P., 
+>* de Bruijne J., van der Marel R.P., de Zeeuw P.T., 1996, MNRAS, 282, 909
+>* Dehnen W., Gerhard O. E., 1994, MNRAS, 268, 1019
+>* Gerhard O. E., 1993, MNRAS, 265, 213
+>* Press W. H., Teukolsky S. A., Vetterling W. T., Flannery B. P., 
      1992, Numerical Recipes, Second Edition. 
      Cambridge University Press, Cambridge
-
-* Qian E. E., de Zeeuw P. T., van der Marel R. P., Hunter C., 1995, 
+>* Qian E. E., de Zeeuw P. T., van der Marel R. P., Hunter C., 1995, 
      MNRAS, 274, 602
-
-* van der Marel R. P., Franx M., 1993, ApJ, 407, 525
+>* van der Marel R. P., Franx M., 1993, ApJ, 407, 525
 
 
 ## PART III: Description of program in- and output
@@ -441,8 +436,9 @@ details, the code is set to run.
 
 There are two main routines in the `scalefree.py` program:
 
-* `scalefree.hermite(input, exec=False)`
-```
+```python
+scalefree.hermite(input, exec=False)
+
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
 
@@ -474,7 +470,8 @@ There are two main routines in the `scalefree.py` program:
     """
 ```
 
-* `scalefree.vprofile(
+```python
+scalefree.vprofile(
     potential="1",
     gamma="4",
     q="1",
@@ -489,8 +486,8 @@ There are two main routines in the `scalefree.py` program:
     maxmom="0",
     theta="0",
     xi="0",
-    exec=False)`
-```
+    exec=False)
+
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
     Note: all results are at an
