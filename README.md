@@ -459,16 +459,16 @@ scalefree.vprofile(
                 - <v^2>_p
                 - <v^3>_p
                 - <v^4>_p
-            gauss_info: real Gaussian fit.
+            gauss_info: real Gaussian model.
                 - norm
                 - mean
                 - dispersion
-            gaussh_info: Gauss-Hermite fit.
+            gaussh_info: Gauss-Hermite model.
                 - norm
                 - mean
                 - dispersion
-            h_moments: First 0-10 moments of the
-                       Gauss-Hermite fit.
+            h_moments: First 0-6 moments of the
+                       Gauss-Hermite model.
                 - hi, with i in [0, 6]
             vinfo: Velocity distribution function
                 - x
