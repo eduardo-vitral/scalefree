@@ -164,9 +164,6 @@ def vprofile(
     vinfo = list()
 
     for sufix in dimensions:
-        # v = np.zeros(size)
-        # vp = np.zeros(size)
-
         h_moments = np.zeros(7)
         for i in range(len(dimensions)):
             prefix = "./scalefree_" + sufix + "/"
