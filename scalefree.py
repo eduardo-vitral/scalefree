@@ -160,17 +160,12 @@ def vprofile(
         inputstr += params[i] + "\n"
     inputstr += params[-1]
 
-    if maxmom == "0":
-        size = 21
-    else:
-        size = int(maxmom) + 1
-
     dimensions = ["los", "posr", "post"]
     vinfo = list()
 
     for sufix in dimensions:
-        v = np.zeros(size)
-        vp = np.zeros(size)
+        # v = np.zeros(size)
+        # vp = np.zeros(size)
 
         h_moments = np.zeros(7)
         for i in range(len(dimensions)):
@@ -197,6 +192,7 @@ def vprofile(
             split = str(p).split()
             counter = 0
             for j in range(len(split)):
+                # print(split[j], maxmom, size)
                 if split[j] == r"<v_ph^2>\n":
                     intmom = {
                         "rho": float(split[j + 1]),
@@ -237,9 +233,29 @@ def vprofile(
                     for k in range(len(h_moments)):
                         h_moments[k] = float(split[j + k + 2].replace(r"\n", r""))
                 if split[j] == r"VP(v)\n":
-                    for k in range(size):
-                        v[k] = float(split[j + 1 + 2 * k])
-                        vp[k] = float(split[j + 2 + 2 * k].replace(r"\n", r""))
+                    v = np.asarray([float(split[j + 1].replace(r"\n", r""))])
+                    vp = np.asarray([float(split[j + 2].replace(r"\n", r""))])
+                    k = 1
+                    stop = False
+                    while stop is False:
+                        vx = split[j + 1 + 2 * k]
+                        if vx == r"\n":
+                            stop = True
+                        else:
+                            v = np.append(v, float(vx.replace(r"\n", r"")))
+                            vp = np.append(
+                                vp, float(split[j + 2 + 2 * k].replace(r"\n", r""))
+                            )
+                            k += 1
+                    # print("Counter/maxmom/size:", counter, maxmom, size)
+                    # for k in range(size):
+                    # if r"\n" in split[j + 1 + 2 * k]:
+                    #     v = np.delete(v, k)
+                    #     vp = np.delete(vp, k)
+                    #     break
+                    # else:
+                    #     v[k] = float(split[j + 1 + 2 * k].replace(r"\n", r""))
+                    #     vp[k] = float(split[j + 2 + 2 * k].replace(r"\n", r""))
 
         hi = ["h0", "h1", "h2", "h3", "h4", "h5", "h6"]
         h_moments = {hi[i]: h_moments[i] for i in range(len(hi))}
@@ -302,7 +318,8 @@ def hermite(input, exec=False):
         [prefix + "fitvp.e", "fitvp.f"],
         text=True,
         input=input,
-        capture_output=True,shell=True,
+        capture_output=True,
+        shell=True,
     )
     split = str(p).split()
 
