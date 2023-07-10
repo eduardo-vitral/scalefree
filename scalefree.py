@@ -162,7 +162,6 @@ def vprofile(
 
     dimensions = ["los", "posr", "post"]
     vinfo = list()
-
     for sufix in dimensions:
         h_moments = np.zeros(7)
         for i in range(len(dimensions)):
@@ -189,7 +188,6 @@ def vprofile(
             split = str(p).split()
             counter = 0
             for j in range(len(split)):
-                # print(split[j], maxmom, size)
                 if split[j] == r"<v_ph^2>\n":
                     intmom = {
                         "rho": float(split[j + 1]),
