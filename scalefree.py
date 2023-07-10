@@ -39,6 +39,7 @@ def vprofile(
     maxmom="0",
     theta="0",
     xi="0",
+    dim=None,
     exec=False,
 ):
     """
@@ -94,6 +95,9 @@ def vprofile(
     xi: str
         Angle on the projected plane
         (in degrees) (0 = major axis)
+    dim: str
+        Specific dimension to be considered.
+        ("los", "posr", "post").
     exec: boolean
         True, if the user wants to generate new .e files.
 
@@ -160,7 +164,10 @@ def vprofile(
         inputstr += params[i] + "\n"
     inputstr += params[-1]
 
-    dimensions = ["los", "posr", "post"]
+    if dim is None:
+        dimensions = ["los", "posr", "post"]
+    else:
+        dimensions = [dim]
     vinfo = list()
     for sufix in dimensions:
         h_moments = np.zeros(7)
@@ -251,7 +258,10 @@ def vprofile(
         fitinfo = (intmom, projmom, gauss_info, gaussh_info, h_moments, vprof)
         vinfo.append(fitinfo)
 
-    vinfo = (vinfo[0], vinfo[1], vinfo[2])
+    if dim is None:
+        vinfo = (vinfo[0], vinfo[1], vinfo[2])
+    else:
+        vinfo = (vinfo[0])
 
     return vinfo
 

@@ -382,8 +382,9 @@ scalefree.vprofile(
     maxmom="0",
     theta="0",
     xi="0",
+    dim=None,
     exec=False,
-)
+):
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
     Note: all results are at an
@@ -437,6 +438,9 @@ scalefree.vprofile(
     xi: str
         Angle on the projected plane
         (in degrees) (0 = major axis)
+    dim: str
+        Specific dimension to be considered.
+        ("los", "posr", "post").
     exec: boolean
         True, if the user wants to generate new .e files.
 
