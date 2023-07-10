@@ -247,15 +247,6 @@ def vprofile(
                                 vp, float(split[j + 2 + 2 * k].replace(r"\n", r""))
                             )
                             k += 1
-                    # print("Counter/maxmom/size:", counter, maxmom, size)
-                    # for k in range(size):
-                    # if r"\n" in split[j + 1 + 2 * k]:
-                    #     v = np.delete(v, k)
-                    #     vp = np.delete(vp, k)
-                    #     break
-                    # else:
-                    #     v[k] = float(split[j + 1 + 2 * k].replace(r"\n", r""))
-                    #     vp[k] = float(split[j + 2 + 2 * k].replace(r"\n", r""))
 
         hi = ["h0", "h1", "h2", "h3", "h4", "h5", "h6"]
         h_moments = {hi[i]: h_moments[i] for i in range(len(hi))}
