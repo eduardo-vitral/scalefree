@@ -41,6 +41,7 @@ def vprofile(
     xi="0",
     dim=None,
     exec=False,
+    debug=False,
 ):
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
@@ -100,6 +101,8 @@ def vprofile(
         ("los", "posr", "post").
     exec: boolean
         True, if the user wants to generate new .e files.
+    debug: boolean
+        True, if the user whises to print the Fortran output.
 
     Returns
     -------
@@ -195,6 +198,8 @@ def vprofile(
             split = str(p).split()
             counter = 0
             for j in range(len(split)):
+                if debug is True:
+                    print(split[j])
                 if split[j] == r"<v_ph^2>\n":
                     intmom = {
                         "rho": float(split[j + 1]),
@@ -210,6 +215,14 @@ def vprofile(
                         "<v^2>_p": float(split[j + 3]),
                         "<v^3>_p": float(split[j + 4]),
                         "<v^4>_p": float(split[j + 5].replace(r"\n", r"")),
+                    }
+                if split[j] == r"<v^4>_p\n************":
+                    projmom = {
+                        "<rho>_p": np.nan,
+                        "<v>_p": float(split[j + 1]),
+                        "<v^2>_p": float(split[j + 2]),
+                        "<v^3>_p": float(split[j + 3]),
+                        "<v^4>_p": float(split[j + 4].replace(r"\n", r"")),
                     }
                 if split[j] == r"(gam,V,sig):" and counter == 0:
                     sig = split[j + 3].replace(r"\n", r"")
@@ -261,7 +274,7 @@ def vprofile(
     if dim is None:
         vinfo = (vinfo[0], vinfo[1], vinfo[2])
     else:
-        vinfo = (vinfo[0])
+        vinfo = vinfo[0]
 
     return vinfo
 

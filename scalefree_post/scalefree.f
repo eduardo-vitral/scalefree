@@ -1309,19 +1309,13 @@ C
       Cfac = MAX(1.0D-20,ABS(Cfac))
 C
       RHOVPOSTMOM = 0.0D0
-      DO k=0,nord
-            DO j=0,nord-k
-                  IF (k.GT.0.0D0) THEN
-                        RHOVPOSTMOM = RHOVPOSTMOM + 0.0D0
-                  ELSE
-                        facln = binomln(nord,k) + binomln(nord-k,j) +
-     &                  (DBLE(j)*LOG(Bfac)) +
-     &                  (DBLE(nord-k-j)*LOG(Cfac))
-                        RHOVPOSTMOM = RHOVPOSTMOM + ( EXPP(facln)*
-     &                  (Bsign**j)*(Csign**(nord-k-j))*
-     &                  RHOVELMOM(theta,k,j,nord-k-j) )
-                  END IF
-            END DO
+      DO j=0,nord
+            facln = binomln(nord,0) + binomln(nord,j) +
+     &      (DBLE(j)*LOG(Bfac)) +
+     &      (DBLE(nord-j)*LOG(Cfac))
+            RHOVPOSTMOM = RHOVPOSTMOM + ( EXPP(facln)*
+     &      (Bsign**j)*(Csign**(nord-j))*
+     &      RHOVELMOM(theta,0,j,nord-j) )
       END DO
 C
       END
