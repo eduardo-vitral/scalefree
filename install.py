@@ -37,7 +37,14 @@ for i in range(len(res)):
         )
 
 expect_v = [
-    {"rho": 1.0, "<v_ph>": 0.0, "<v_r^2>": 0.1, "<v_th^2>": 0.1, "<v_ph^2>": 0.1},
+    {
+        "rho": 1.0,
+        "<v_ph>": 0.0,
+        "<v_r^2>": 0.1,
+        "<v_th^2>": 0.1,
+        "<v_ph^2>": 0.1,
+        "beta": 0.0,
+    },
     {
         "<rho>_p": 1.57079633,
         "<v>_p": 0.0,
@@ -47,15 +54,7 @@ expect_v = [
     },
     {"norm": 1.0, "mean": 0.0, "dispersion": 0.29134625},
     {"norm": 1.0, "mean": 0.0, "dispersion": 0.29134625},
-    {
-        "h0": 1.0,
-        "h1": -0.0,
-        "h2": 0.0,
-        "h3": 0.0,
-        "h4": 0.2439,
-        "h5": 0.0,
-        "h6": 0.0,
-    },
+    {"h0": 1.0, "h1": -0.0, "h2": 0.0, "h3": 0.0, "h4": 0.2439, "h5": 0.0, "h6": 0.0},
 ]
 
 expect_vp = [
@@ -63,7 +62,7 @@ expect_vp = [
     np.asarray([0.02103181, 0.57901835, 1.29989968, 0.57901835, 0.02103181]),
 ]
 
-res3d = scalefree.vprofile(maxmom="4", exec=True)
+res3d = scalefree.vprofile(maxmom="4", exec=True, average=True)
 for j in range(len(res3d)):
     res = res3d[j]
     for i in range(len(res) - 1):

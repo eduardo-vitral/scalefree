@@ -122,7 +122,8 @@ C
       WRITE (*,*) ' '
 C
       WRITE (*,*) 'Use Romberg (0) or Gauss-Legendre (1) integration'
-      WRITE (*,*) 'for line-of-sight projection ? (default=1)' 
+      WRITE (*,*) 'for line-of-sight projection and integration over'
+      WRITE (*,*) 'the meridional or sky plane? (default=1)' 
       READ (*,*) iint
       WRITE (*,*) ' '
 C
@@ -222,6 +223,10 @@ CCCCCCCCCCCCCCCCCCCC
 C
 51    WRITE (*,*) 'Calculate intrinsic (0) or projected (1)'
       WRITE (*,*) 'kinematical quantities ?'
+      WRITE (*,*) 'This gives results for a fixed angle in the'
+      WRITE (*,*) 'meridional or projected plane.'
+      WRITE (*,*) 'Instead, add 2 to get results mass-weighted' 
+      WRITE (*,*) 'over angles between 0 and pi/2'
       READ (*,*) iwhat
       WRITE (*,*) ' '
 C
@@ -252,6 +257,23 @@ C
      &                           RHOVELMOM(theta,0,0,2)/rho
         WRITE (*,*) ' '
 C
+      ELSE IF (iwhat.EQ.2) THEN
+C
+        rho   = RHOVELMOMTHAV(0,0,0)
+        rhop1 = RHOVELMOMTHAV(0,0,1)
+        rhor2 = RHOVELMOMTHAV(2,0,0)
+        rhot2 = RHOVELMOMTHAV(0,2,0)
+        rhop2 = RHOVELMOMTHAV(0,0,2)
+        betav = 1.0D0 - ((rhot2+rhop2)/(2.0D0*rhor2))
+C
+        WRITE (*,*) 'Intrinsic velocity moments:'
+        WRITE (*,*) 'Mass-weighted average spherical shell:'
+        WRITE (*,'(6A12)') 'rho','<v_ph>','<v_r^2>','<v_th^2>',
+     &                     '<v_ph^2>','beta'   
+        WRITE (*,'(6F12.8)') rho, rhop1/rho,
+     &        rhor2/rho, rhot2/rho, rhop2/rho, betav
+        WRITE (*,*) ' '
+C
       ELSE IF (iwhat.EQ.1) THEN
 C
         WRITE (*,*) 'Give angle on the projected plane'
@@ -271,6 +293,34 @@ C
      &                       PROJMOM(xi,4)
         WRITE (*,*) ' '
 C
+      ELSE IF (iwhat.EQ.3) THEN
+C
+        rhop0 = RHOPROJMOMAV(0)
+        rhop1 = RHOPROJMOMAV(1)
+        rhop2 = RHOPROJMOMAV(2)
+        rhop3 = RHOPROJMOMAV(3)
+        rhop4 = RHOPROJMOMAV(4)
+C         
+        WRITE (*,*) 'Projected velocity moments:'
+        WRITE (*,'(5A12)') '<rho>_p','<v>_p','<v^2>_p','<v^3>_p',
+     &                     '<v^4>_p'
+        WRITE (*,'(6F12.8)') rhop0, rhop1/rhop0, rhop2/rhop0,
+     &                              rhop3/rhop0, rhop4/rhop0
+        WRITE (*,*) ' '
+C
+      ELSE
+C
+        STOP 'Wrong answer'
+C
+      END IF
+C
+CCCCCCCCCCCCCCCCCCCC
+C
+C If iwhat=1 or 3, then calculate and write also VP information      
+C
+CCCCCCCCCCCCCCCCCCCC
+C
+      IF ((iwhat.EQ.1).OR.(iwhat.EQ.3)) THEN
 C
 C Set the number of GH moments to calculate
 C
@@ -286,10 +336,10 @@ C
 C Calculate the VP and VP coefficients
 C
         IF (xlam.LT.0.0) THEN
-          CALL VPANALYSE_CONV (xi,nord,xmom,gam0,V0,sig0,darr,
+          CALL VPANALYSE_CONV (iwhat,xi,nord,xmom,gam0,V0,sig0,darr,
      &                      velar,vpval,nvel,gam,Vgau,sig,harr)
         ELSE
-          CALL VPANALYSE_FIX (xi,maxord,xmom,gam0,V0,sig0,darr,
+          CALL VPANALYSE_FIX (iwhat,xi,maxord,xmom,gam0,V0,sig0,darr,
      &                      velar,vpval,nvel,gam,Vgau,sig,harr)
         END IF
 C
@@ -312,12 +362,8 @@ C
         END DO
         WRITE (*,*) ' '
 C
-      ELSE
-C
-        STOP 'Wrong answer'
-C
-      END IF
-C
+      END IF      
+C      
 CCCCCCCCCCCCCCCCCCCC
 C
 C Continue ?
@@ -421,7 +467,7 @@ C ipot=1 for Kepler potential and ipot=2 for logarithmic potential
 C
       COMMON /param/ gamma, beta, q, alpha, eta
 C
-      IF (2*(nord/2).NE.nord) PAUSE 'No vdM & F result for odd order'
+      IF (2*(nord/2).NE.nord) STOP 'No vdM & F result for odd order'
 C
       no2   = nord/2
       dnord = DBLE(nord)
@@ -476,12 +522,14 @@ C
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 
 
-      SUBROUTINE VPANALYSE_FIX (xi,nord,xmom,gam0,V0,sig0,darr,
+      SUBROUTINE VPANALYSE_FIX (iwhat,xi,nord,xmom,gam0,V0,sig0,darr,
      &      velar,vpval,nvel,gam,Vgau,sig,harr)
 C
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 C
-C Given an angle xi from the major axis, calculate at projected radius 1
+C If iwhat=1, then do calculations at a given an angle xi from the major axis.
+C If iwhat=3, then integrated over all angles in the first sky quadrant.
+C In either case, calculate at projected radius 1
 C (in dimensionless units), given an integer nord:
 C   - the first nord projected moments, returned in xmom
 C   - the lowest order true moments (gam0,V0,sig0) 
@@ -529,8 +577,13 @@ C
           WRITE (*,*) ' '
       END IF
 C
+      rhopr0 = RHOPROJMOMAV(0)
       DO i=0,nord
-        xmom(i) = PROJMOM(xi,i)
+        IF (iwhat.EQ.1) THEN   
+          xmom(i) = PROJMOM(xi,i)
+        ELSE IF (iwhat.EQ.3) THEN    
+          xmom(i) = RHOPROJMOMAV(i) / rhopr0
+        END IF
       END DO
 C
 C Calculate the normalization, mean and dispersion
@@ -571,13 +624,15 @@ C
       END
 
 
-      SUBROUTINE VPANALYSE_CONV (xi,nord,xmom,gam0,V0,sig0,darr,
+      SUBROUTINE VPANALYSE_CONV (iwhat,xi,nord,xmom,gam0,V0,sig0,darr,
      &      velar,vpval,nvel,gam,Vgau,sig,harr)
 C
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 C
-C Given an angle xi from the major axis, calculate at projected radius 1
-C (in dimensionless units), given an integer value nord:
+C If iwhat=1, then do calculations at a given an angle xi from the major axis.
+C If iwhat=3, then integrated over all angles in the first sky quadrant.
+C In either case, calculate at projected radius 1
+C (in dimensionless units), given an integer nord:
 C   - the first nord or more projected moments, returned in xmom
 C   - the lowest order true moments (gam0,V0,sig0) 
 C   - the first nord or more Gram-Charlier coefficients, returned in darr
@@ -613,8 +668,13 @@ CCCCCCCCC
 C
 C Calculate the lowest order moments
 C
+      rhopr0 = RHOPROJMOMAV(0)
       DO i=0,2
-        xmom(i) = PROJMOM(xi,i)
+        IF (iwhat.EQ.1) THEN   
+          xmom(i) = PROJMOM(xi,i)
+        ELSE IF (iwhat.EQ.3) THEN    
+          xmom(i) = RHOPROJMOMAV(i) / rhopr0
+        END IF
       END DO
 C
 C Calculate the normalization, mean and dispersion
@@ -657,7 +717,11 @@ C
       END IF
 C
       DO i=3,ncur
-        xmom(i) = PROJMOM(xi,i)
+        IF (iwhat.EQ.1) THEN   
+          xmom(i) = PROJMOM(xi,i)
+        ELSE IF (iwhat.EQ.3) THEN    
+          xmom(i) = RHOPROJMOMAV(i) / rhopr0
+        END IF
       END DO
 C
       gamold  = gam
@@ -1154,6 +1218,60 @@ C
       H_POL = HE_POL(l,x*SQRT(2.0D0))
       END
 
+
+      REAL*8 FUNCTION RHOPROJMOMAV (nord)
+C
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+C
+C The function RHOPROJMOMAV calculates the
+C projected rho times velocity moment of a given order, integrated along
+C a circle in the first quadrant of the sky.
+C      
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+C
+      PARAMETER (pi=3.14159265358979D0)
+C
+      COMMON /howint/ iint
+C
+      COMMON /curprojorder/ nordcur
+C
+C Common block that holds copies of the order with which this 
+C function is called.
+C      
+      EXTERNAL TOINTPROJ,MIDPNTB
+C      
+CCCCCCCCCCCCCCCCCCCC
+C
+      nordcur  = nord
+C      
+      IF (iint.EQ.0) THEN
+        CALL QROMOB (TOINTPROJ,0.0D0,0.5D0*pi,SS,MIDPNTB)
+      ELSE
+        CALL QGAUSLEGB (TOINTPROJ,0.0D0,0.5D0*pi,SS)
+      END IF
+C
+      RHOPROJMOMAV = SS / (0.5D0*pi)
+C 
+      END
+
+
+      REAL*8 FUNCTION TOINTPROJ (xi)
+C
+C The function that must be integrated to get the first-quadrant integral
+C over a circle on the sky of rho times projected velocity moment for the
+C order given by /curprojorder/.
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+C
+      COMMON /curprojorder/ nordcur
+C
+      TOINTPROJ = RHOPROJ(xi) * PROJMOM(xi,nordcur)
+C
+      END
+      
+      
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 C
 C The function RHOPROJ calculates the projected mass density analytically.
@@ -1404,8 +1522,63 @@ C
       END
 
 
+      REAL*8 FUNCTION RHOVELMOMTHAV(lr,lth,lph)
+C
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
 C
+C The function RHOVELMOMTHAV calculates rho times the
+C intrinsic velocity moment of a given order, integrated over
+C a spherical shell of unit radius.
+C      
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+C
+      PARAMETER (pi=3.14159265358979D0)
+C
+      COMMON /howint/ iint
+C
+      COMMON /curorders/ lrcur,lthcur,lphcur
+C
+C Common block that holds copies of the orders with which this 
+C function is called.
+C      
+      EXTERNAL TOINTMER,MIDPNT
+C      
+CCCCCCCCCCCCCCCCCCCC
+C
+      lrcur  = lr
+      lthcur = lth
+      lphcur = lph
+C      
+      IF (iint.EQ.0) THEN
+        CALL QROMO (TOINTMER,0.0D0,0.5D0*pi,SS,MIDPNT)
+      ELSE
+        CALL QGAUSLEG (TOINTMER,0.0D0,0.5D0*pi,SS)
+      END IF
+C
+      RHOVELMOMTHAV = SS
+C 
+      END
+
+
+      REAL*8 FUNCTION TOINTMER (theta)
+C
+C The function that must be integrated to get the integral over a spherical
+C shell of rho times the intrinsic velocity moment of the orders given by
+C /curorders/.
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+C
+      COMMON /curorders/ lrcur,lthcur,lphcur
+C
+      TOINTMER = SIN(theta) * RHOVELMOM(theta,lrcur,lthcur,lphcur)
+C
+      END
+      
+      
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+C      
 C The function RHOVELMOM calculates rho times intrinsic velocity momemnt
 C of a given order. This is a prefactor times a power series in
 C e^2 SIN^2(theta). The (ln of the) prefactor is calculated by PREFACLN.
@@ -1548,7 +1721,7 @@ C
 C
       IF ((lr.GT.maxord).OR.(lth.GT.maxord).OR.
      &    (lph.GT.maxord)) THEN
-        PAUSE 'order to large in cofarr'
+        STOP 'order to large in cofarr'
       END IF
 C
       IF ((2*(lr/2).NE.lr).OR.(2*(lth/2).NE.lth)) THEN
@@ -1576,7 +1749,7 @@ C
 C
       IF ((lr.GT.maxord).OR.(lth.GT.maxord).OR.
      &    (lph.GT.maxord)) THEN
-        PAUSE 'order too large in kmaxarr'
+        STOP 'order too large in kmaxarr'
       END IF
 C
       IF ((2*(lr/2).NE.lr).OR.(2*(lth/2).NE.lth)) THEN
@@ -1758,7 +1931,7 @@ C
         z = 1.0D0 - x
         gammaln = (LOG((pi*z)/SIN(pi*z))) - gammln(2.0D0-x)
       ELSE
-        PAUSE 'x < 0 in gammaln'
+        STOP 'x < 0 in gammaln'
       END IF
       END
 
@@ -2171,7 +2344,7 @@ CU    USES polint
         s(j+1)=s(j)
         h(j+1)=h(j)/9.0D0
 11    continue
-      pause 'too many steps in qromo'
+      STOP 'too many steps in qromo'
       END
 
 
@@ -2232,7 +2405,7 @@ C
           hp=xa(i+m)-x
           w=c(i+1)-d(i)
           den=ho-hp
-          if(den.eq.0.0D0)pause 'failure in polint'
+          if(den.eq.0.0D0)STOP 'failure in polint'
           den=w/den
           d(i)=hp*den
           c(i)=ho*den
@@ -2459,7 +2632,7 @@ CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
         do 11 j=1,n
           if (abs(a(i,j)).gt.aamax) aamax=abs(a(i,j))
 11      continue
-        if (aamax.eq.0.0D0) pause 'singular matrix in ludcmp'
+        if (aamax.eq.0.0D0) STOP 'singular matrix in ludcmp'
         vv(i)=1.0D0/aamax
 12    continue
       do 19 j=1,n
@@ -2819,5 +2992,133 @@ CU    USES realft
         sum=sum+y(j)
         y(j)=sum
 12    continue
+      return
+      END
+
+
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+C
+C Copies of routines already given above, but with slightly modified names,
+C to avoid recursive calling when evaluating double integrals.      
+C
+CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
+
+      SUBROUTINE qgauslegB(func,a,b,ss)
+C
+C Modified version of qgaus. Common block /gleg/ must have been 
+C filled previously
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+      REAL*8 a,b,ss,func
+      EXTERNAL func
+      COMMON /gleg/ qx(300),qw(300),nGL
+      ss = 0.0D0
+      DO i=1,nGL
+        ss = ss + (qw(i)*func(a+(qx(i)*(b-a))))
+      END DO
+      ss = ss*(b-a)
+      END
+
+
+      SUBROUTINE qromoB(func,a,b,ss,choose)
+C
+C Modified to be double precision, and to receive eps from common block
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+      INTEGER JMAX,JMAXP,K,KM
+      REAL*8 a,b,func,ss,EPS
+      COMMON /romoeps/ eps
+      EXTERNAL func,choose
+      PARAMETER (JMAX=14, JMAXP=JMAX+1, K=5, KM=K-1)
+CU    USES polintB
+      INTEGER j
+      REAL*8 dss,h(JMAXP),s(JMAXP)
+      h(1)=1.0D0
+      do 11 j=1,JMAX
+        call choose(func,a,b,s(j),j)
+        if (j.ge.K) then
+          call polintB(h(j-KM),s(j-KM),K,0.0D0,ss,dss)
+          if (abs(dss).le.EPS*abs(ss)) return
+        endif
+        s(j+1)=s(j)
+        h(j+1)=h(j)/9.0D0
+11    continue
+      STOP 'too many steps in qromo'
+      END
+
+
+      SUBROUTINE polintB(xa,ya,n,x,y,dy)
+C
+C Modified to be double precision
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+      INTEGER n,NMAX
+      REAL*8 dy,x,y,xa(n),ya(n)
+      PARAMETER (NMAX=10)
+      INTEGER i,m,ns
+      REAL*8 den,dif,dift,ho,hp,w,c(NMAX),d(NMAX)
+      ns=1
+      dif=abs(x-xa(1))
+      do 11 i=1,n
+        dift=abs(x-xa(i))
+        if (dift.lt.dif) then
+          ns=i
+          dif=dift
+        endif
+        c(i)=ya(i)
+        d(i)=ya(i)
+11    continue
+      y=ya(ns)
+      ns=ns-1
+      do 13 m=1,n-1
+        do 12 i=1,n-m
+          ho=xa(i)-x
+          hp=xa(i+m)-x
+          w=c(i+1)-d(i)
+          den=ho-hp
+          if(den.eq.0.0D0)STOP 'failure in polintB'
+          den=w/den
+          d(i)=hp*den
+          c(i)=ho*den
+12      continue
+        if (2*ns.lt.n-m)then
+          dy=c(ns+1)
+        else
+          dy=d(ns)
+          ns=ns-1
+        endif
+        y=y+dy
+13    continue
+      return
+      END
+
+
+      SUBROUTINE midpntB(func,a,b,s,n)
+C
+C Modified to be double precision
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+      INTEGER n
+      REAL*8 a,b,s,func
+      EXTERNAL func
+      INTEGER it,j
+      REAL*8 ddel,del,sum,tnm,x
+      if (n.eq.1) then
+        s=(b-a)*func(0.5D0*(a+b))
+      else
+        it=3**(n-2)
+        tnm=it
+        del=(b-a)/(3.0D0*tnm)
+        ddel=del+del
+        x=a+0.5D0*del
+        sum=0.0D0
+        do 11 j=1,it
+          sum=sum+func(x)
+          x=x+ddel
+          sum=sum+func(x)
+          x=x+del
+11      continue
+        s=(s+(b-a)*sum/tnm)/3.0D0
+      endif
       return
       END

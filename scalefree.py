@@ -40,6 +40,7 @@ def vprofile(
     theta="0",
     xi="0",
     dim=None,
+    average=False,
     exec=False,
     debug=False,
 ):
@@ -99,6 +100,10 @@ def vprofile(
     dim: str
         Specific dimension to be considered.
         ("los", "posr", "post").
+    average: boolean
+        Weather the moments are averaged over the first quadrand of 
+        the sky. For even models, that is the same as the average
+        over the whole sky.
     exec: boolean
         True, if the user wants to generate new .e files.
     debug: boolean
@@ -117,6 +122,7 @@ def vprofile(
                 - <v_r^2>
                 - <v_th^2>
                 - <v_ph^2>
+                - beta (for avareged models only)
             projmom: Projected velocity moments:
                 - <rho>_p
                 - <v>_p
@@ -138,27 +144,50 @@ def vprofile(
                 - x
                 - f(x)
     """
-    params = [
-        potential,
-        gamma,
-        q,
-        df,
-        beta,
-        s,
-        t,
-        inclination,
-        integration,
-        ngl,
-        algorithm,
-        maxmom,
-        "0",
-        theta,
-        "1",
-        "1",
-        xi,
-        "0",
-        "0",
-    ]
+
+    if average is True:
+        params = [
+            potential,
+            gamma,
+            q,
+            df,
+            beta,
+            s,
+            t,
+            inclination,
+            integration,
+            ngl,
+            algorithm,
+            maxmom,
+            "2",
+            "1",
+            "3",
+            "0",
+            "0",
+        ]
+    else:
+        params = [
+            potential,
+            gamma,
+            q,
+            df,
+            beta,
+            s,
+            t,
+            inclination,
+            integration,
+            ngl,
+            algorithm,
+            maxmom,
+            "0",
+            theta,
+            "1",
+            "1",
+            xi,
+            "0",
+            "0",
+        ]
+
     for i in range(len(params)):
         if isinstance(params[i], str) is False:
             raise ValueError("ERROR: All inputs should be in 'str' format.")
@@ -196,10 +225,10 @@ def vprofile(
                 capture_output=True,
             )
             split = str(p).split()
+            if debug is True:
+                print(p.stdout)
             counter = 0
             for j in range(len(split)):
-                if debug is True:
-                    print(split[j])
                 if split[j] == r"<v_ph^2>\n":
                     intmom = {
                         "rho": float(split[j + 1]),
@@ -207,6 +236,15 @@ def vprofile(
                         "<v_r^2>": float(split[j + 3]),
                         "<v_th^2>": float(split[j + 4]),
                         "<v_ph^2>": float(split[j + 5].replace(r"\n", r"")),
+                    }
+                if split[j] == r"beta\n":
+                    intmom = {
+                        "rho": float(split[j + 1]),
+                        "<v_ph>": float(split[j + 2]),
+                        "<v_r^2>": float(split[j + 3]),
+                        "<v_th^2>": float(split[j + 4]),
+                        "<v_ph^2>": float(split[j + 5]),
+                        "beta": float(split[j + 6].replace(r"\n", r"")),
                     }
                 if split[j] == r"<v^4>_p\n":
                     projmom = {
