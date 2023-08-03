@@ -383,7 +383,9 @@ scalefree.vprofile(
     theta="0",
     xi="0",
     dim=None,
+    average=False,
     exec=False,
+    debug=False,
 ):
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
@@ -441,8 +443,14 @@ scalefree.vprofile(
     dim: str
         Specific dimension to be considered.
         ("los", "posr", "post").
+    average: boolean
+        Weather the moments are averaged over the first quadrand of 
+        the sky. For even models, that is the same as the average
+        over the whole sky.
     exec: boolean
         True, if the user wants to generate new .e files.
+    debug: boolean
+        True, if the user whises to print the Fortran output.
 
     Returns
     -------
@@ -457,6 +465,7 @@ scalefree.vprofile(
                 - <v_r^2>
                 - <v_th^2>
                 - <v_ph^2>
+                - beta (for avareged models only)
             projmom: Projected velocity moments:
                 - <rho>_p
                 - <v>_p
