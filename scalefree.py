@@ -101,7 +101,7 @@ def vprofile(
         Specific dimension to be considered.
         ("los", "posr", "post").
     average: boolean
-        Weather the moments are averaged over the first quadrand of 
+        Weather the moments are averaged over the first quadrand of
         the sky. For even models, that is the same as the average
         over the whole sky.
     exec: boolean
@@ -229,6 +229,11 @@ def vprofile(
                 print(p.stdout)
             counter = 0
             for j in range(len(split)):
+                if split[j] == r"ITMAX":
+                    if split[j + 1] == r"exceeded":
+                        raise ValueError(
+                            "ERROR: ITMAX exceeded in amoeba. Choose a smaller value for 'maxmom'."
+                        )
                 if split[j] == r"<v_ph^2>\n":
                     intmom = {
                         "rho": float(split[j + 1]),
