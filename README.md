@@ -386,6 +386,7 @@ scalefree.vprofile(
     average=False,
     exec=False,
     debug=False,
+    usevp=True,
 ):
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
@@ -451,6 +452,8 @@ scalefree.vprofile(
         True, if the user wants to generate new .e files.
     debug: boolean
         True, if the user whises to print the Fortran output.
+    usevp: boolean
+        True, if the user wishes to have VP information.
 
     Returns
     -------

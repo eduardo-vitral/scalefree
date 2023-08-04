@@ -43,6 +43,7 @@ def vprofile(
     average=False,
     exec=False,
     debug=False,
+    usevp=True,
 ):
     """
     Returns the fits of a Gauss-Hermite adjustment to data.
@@ -108,6 +109,8 @@ def vprofile(
         True, if the user wants to generate new .e files.
     debug: boolean
         True, if the user whises to print the Fortran output.
+    usevp: boolean
+        True, if the user wishes to have VP information.
 
     Returns
     -------
@@ -229,11 +232,12 @@ def vprofile(
                 print(p.stdout)
             counter = 0
             for j in range(len(split)):
-                if split[j] == r"ITMAX":
-                    if split[j + 1] == r"exceeded":
-                        raise ValueError(
-                            "ERROR: ITMAX exceeded in amoeba. Choose a smaller value for 'maxmom'."
-                        )
+                if usevp is True:
+                    if split[j] == r"ITMAX":
+                        if split[j + 1] == r"exceeded":
+                            raise ValueError(
+                                "ERROR: ITMAX exceeded in amoeba. Choose a smaller value for 'maxmom'."
+                            )
                 if split[j] == r"<v_ph^2>\n":
                     intmom = {
                         "rho": float(split[j + 1]),
@@ -267,47 +271,53 @@ def vprofile(
                         "<v^3>_p": float(split[j + 3]),
                         "<v^4>_p": float(split[j + 4].replace(r"\n", r"")),
                     }
-                if split[j] == r"(gam,V,sig):" and counter == 0:
-                    sig = split[j + 3].replace(r"\n", r"")
-                    sig = float(sig.replace("Gauss-fit", r""))
+                if usevp is True:
+                    if split[j] == r"(gam,V,sig):" and counter == 0:
+                        sig = split[j + 3].replace(r"\n", r"")
+                        sig = float(sig.replace("Gauss-fit", r""))
 
-                    gauss_info = {
-                        "norm": float(split[j + 1]),
-                        "mean": float(split[j + 2]),
-                        "dispersion": sig,
-                    }
-                    counter += 1
-                if split[j] == r"(gam,V,sig):" and counter == 1:
-                    sig = split[j + 3].replace(r"\n", r"")
-                    sig = float(sig.replace("Gauss-fit", r""))
+                        gauss_info = {
+                            "norm": float(split[j + 1]),
+                            "mean": float(split[j + 2]),
+                            "dispersion": sig,
+                        }
+                        counter += 1
+                    if split[j] == r"(gam,V,sig):" and counter == 1:
+                        sig = split[j + 3].replace(r"\n", r"")
+                        sig = float(sig.replace("Gauss-fit", r""))
 
-                    gaussh_info = {
-                        "norm": float(split[j + 1]),
-                        "mean": float(split[j + 2]),
-                        "dispersion": sig,
-                    }
-                    counter += 1
-                if split[j] == r"...":
-                    for k in range(len(h_moments)):
-                        h_moments[k] = float(split[j + k + 2].replace(r"\n", r""))
-                if split[j] == r"VP(v)\n":
-                    v = np.asarray([float(split[j + 1].replace(r"\n", r""))])
-                    vp = np.asarray([float(split[j + 2].replace(r"\n", r""))])
-                    k = 1
-                    stop = False
-                    while stop is False:
-                        vx = split[j + 1 + 2 * k]
-                        if vx == r"\n":
-                            stop = True
-                        else:
-                            v = np.append(v, float(vx.replace(r"\n", r"")))
-                            vp = np.append(
-                                vp, float(split[j + 2 + 2 * k].replace(r"\n", r""))
-                            )
-                            k += 1
+                        gaussh_info = {
+                            "norm": float(split[j + 1]),
+                            "mean": float(split[j + 2]),
+                            "dispersion": sig,
+                        }
+                        counter += 1
+                    if split[j] == r"...":
+                        for k in range(len(h_moments)):
+                            h_moments[k] = float(split[j + k + 2].replace(r"\n", r""))
+                    if split[j] == r"VP(v)\n":
+                        v = np.asarray([float(split[j + 1].replace(r"\n", r""))])
+                        vp = np.asarray([float(split[j + 2].replace(r"\n", r""))])
+                        k = 1
+                        stop = False
+                        while stop is False:
+                            vx = split[j + 1 + 2 * k]
+                            if vx == r"\n":
+                                stop = True
+                            else:
+                                v = np.append(v, float(vx.replace(r"\n", r"")))
+                                vp = np.append(
+                                    vp, float(split[j + 2 + 2 * k].replace(r"\n", r""))
+                                )
+                                k += 1
 
         hi = ["h0", "h1", "h2", "h3", "h4", "h5", "h6"]
         h_moments = {hi[i]: h_moments[i] for i in range(len(hi))}
+        if usevp is False:
+            v = np.zeros(3)
+            vp = np.zeros(3)
+            gauss_info = np.zeros(3)
+            gaussh_info = np.zeros(3)
 
         vprof = {"x": v, "f(x)": vp}
 
