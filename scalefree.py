@@ -218,7 +218,6 @@ def vprofile(
                 p = subprocess.run(
                     ["gfortran", prefix + "scalefree.f", "-o", prefix + "scalefree.e"],
                     text=True,
-                    input="y",
                     capture_output=True,
                 )
             p = subprocess.run(
@@ -373,7 +372,6 @@ def hermite(input, exec=False):
         p = subprocess.run(
             ["gfortran", prefix + "fitvp.f", "-o", prefix + "fitvp.e"],
             text=True,
-            input="y",
             capture_output=True,
         )
     p = subprocess.run(
@@ -412,3 +410,130 @@ def hermite(input, exec=False):
     fitinfo = (gauss_info, gaussh_info, h_moments)
 
     return fitinfo
+
+
+def mock(
+    potential="1",
+    gamma="4",
+    q="1",
+    df="1",
+    beta="0",
+    s="0.5",
+    t="0",
+    nsamples="50",
+    seed="-101",
+    rin="1",
+    rout="1000",
+    exec=False,
+    debug=False,
+):
+    """
+    Returns the fits of a Gauss-Hermite adjustment to data.
+    Note: all results are at an
+    (intrinsic or projected) radius of 1 in
+    dimensionless units. Results can be scaled to other
+    radii using the scale-free nature of the models.
+
+    Parameters
+    ----------
+    potential: str
+        Kepler (1) or Logarithmic (2) Potential.
+    gamma: str
+        Power-law slope gamma of the mass density.
+    q: str
+        Intrinsic axial ratio q of the mass density.
+    df: str
+        Case I (1) or Case II (2) DF
+    beta: str
+        Anisotropy parameter beta of the DF
+    s: str
+        Odd part parameter s for the DF
+    t: str
+        Odd part parameter t for the DF
+    nsamples: int
+        Namber of particles to be generated.
+    seed: int
+        An integer to initialize the random sequence.
+    rin: float
+        inner radius for Monte-Carlo drawings
+        in dimensionless units
+    rout: float
+        outer radius for Monte-Carlo drawings
+        in dimensionless units
+    exec: boolean
+        True, if the user wants to generate new .e files.
+    debug: boolean
+        True, if the user whises to print the Fortran output.
+
+    Returns
+    -------
+    mock data : array of shape (N, 6)
+        List of random draws for x, y, z, vx, vy, vz.
+
+
+    """
+
+    params = [
+        potential,
+        gamma + r"D0",
+        q + r"D0",
+        df,
+        beta + r"D0",
+        s + r"D0",
+        t + r"D0",
+        nsamples,
+        seed,
+        rin + r"D0",
+        rout + r"D0",
+    ]
+
+    for i in range(len(params)):
+        if isinstance(params[i], str) is False:
+            raise ValueError("ERROR: All inputs should be in 'str' format.")
+    inputstr = params[0] + "\n"
+    for i in range(1, len(params)):
+        inputstr += params[i] + "\n"
+    inputstr += "./mocks/output.txt"
+
+    prefix = "./mocks/"
+    if exec is True:
+        p = subprocess.run(
+            ["rm", prefix + "MCdraw5.e"],
+            text=True,
+            input="y",
+            capture_output=True,
+        )
+        p = subprocess.run(
+            ["gfortran", prefix + "MCdraw5.f", "-o", prefix + "MCdraw5.e"],
+            text=True,
+            capture_output=True,
+        )
+    p = subprocess.run(
+        [prefix + "MCdraw5.e", "MCdraw5.f"],
+        text=True,
+        input=inputstr,
+        capture_output=True,
+    )
+    split = str(p).split()
+    if debug is True:
+        print(p.stdout)
+
+    for j in range(len(split)):
+        if split[j] == r"ways):\n":
+            binneyb = np.asarray([float(split[j + 1])])
+            rms1 = np.asarray([float(split[j + 2])])
+            rms2 = np.asarray([float(split[j + 3].replace(r"\n',", r""))])
+
+    if debug is True:
+        print("\nBinney beta:", binneyb)
+        print("RMS from method 1:", rms1)
+        print("RMS from method 2:", rms2)
+    data = np.loadtxt(prefix + "output.txt")
+    p = subprocess.run(
+        ["rm", prefix + "output.txt"],
+        text=True,
+        input="y",
+        capture_output=True,
+    )
+
+    return data

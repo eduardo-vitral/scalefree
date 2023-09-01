@@ -331,7 +331,7 @@ After the user has entered the required model parameters, and has
 answered to the program how it must deal with the various numerical
 details, the code is set to run.
 
-There are two main routines in the `scalefree.py` program:
+There are three main routines in the `scalefree.py` program:
 
 ```python
 scalefree.hermite(input, exec=False)
@@ -489,6 +489,69 @@ scalefree.vprofile(
             vinfo: Velocity distribution function
                 - x
                 - f(x)
+    """
+```
+
+```python
+scalefree.mock(
+    potential="1",
+    gamma="4",
+    q="1",
+    df="1",
+    beta="0",
+    s="0.5",
+    t="0",
+    nsamples="50",
+    seed="-101",
+    rin="1",
+    rout="1000",
+    exec=False,
+    debug=False,
+):
+    """
+    Returns the fits of a Gauss-Hermite adjustment to data.
+    Note: all results are at an
+    (intrinsic or projected) radius of 1 in
+    dimensionless units. Results can be scaled to other
+    radii using the scale-free nature of the models.
+
+    Parameters
+    ----------
+    potential: str
+        Kepler (1) or Logarithmic (2) Potential.
+    gamma: str
+        Power-law slope gamma of the mass density.
+    q: str
+        Intrinsic axial ratio q of the mass density.
+    df: str
+        Case I (1) or Case II (2) DF
+    beta: str
+        Anisotropy parameter beta of the DF
+    s: str
+        Odd part parameter s for the DF
+    t: str
+        Odd part parameter t for the DF
+    nsamples: int
+        Namber of particles to be generated.
+    seed: int
+        An integer to initialize the random sequence.
+    rin: float
+        inner radius for Monte-Carlo drawings
+        in dimensionless units
+    rout: float
+        outer radius for Monte-Carlo drawings
+        in dimensionless units
+    exec: boolean
+        True, if the user wants to generate new .e files.
+    debug: boolean
+        True, if the user whises to print the Fortran output.
+
+    Returns
+    -------
+    mock data : array of shape (N, 6)
+        List of random draws for x, y, z, vx, vy, vz.
+
+
     """
 ```
 

@@ -91,5 +91,12 @@ for j in range(len(res3d)):
             i + 1,
         )
 
+data = scalefree.mock(
+    exec=True,
+)
+data_shape = np.shape(data)
+if data_shape[0] != 50 or data_shape[1] != 6:
+    raise ValueError("ERROR: Data shape is not correct.")
+
 print("\nInstallation succesfull.")
 print("Finished.")
