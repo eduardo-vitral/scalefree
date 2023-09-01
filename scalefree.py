@@ -469,8 +469,6 @@ def mock(
     -------
     mock data : array of shape (N, 6)
         List of random draws for x, y, z, vx, vy, vz.
-
-
     """
 
     params = [
