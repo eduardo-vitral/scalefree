@@ -272,12 +272,12 @@ where $\theta$ is the polar angle such that:
 $R = r \sin(\theta)$ &nbsp; and &nbsp; $z = r \cos(\theta)$.
  
 Since the potential is spherical, the quantities $E$, $L^2$, $L_z^2$ are 
-integrals of motion. Let $L_{max}(E)$ be the maximum angular momentum that 
+integrals of motion. Let $L_{\mathrm{max}}(E)$ be the maximum angular momentum that 
 can be attained by a star at energy $E = \Psi - v^2$.
 
-* In the **Keplerian** potential: $L^2_{max}(E) = 1 / (4E)$.
+* In the **Keplerian** potential: $L^2_{\mathrm{max}}(E) = 1 / (4E)$.
 
-* In the **Logarithmic** potential: $L^2_{max}(E) = \exp(-2E -1) / 2$
+* In the **Logarithmic** potential: $L^2_{\mathrm{max}}(E) = \exp(-2E -1) / 2$
  
 We consider even DFs that are separable functions or quasi-separable 
 functions of $E$, $\zeta^2$, $\eta^2$:
@@ -287,9 +287,9 @@ functions of $E$, $\zeta^2$, $\eta^2$:
 * **case II** : $f_e = g(E)  \zeta^{-2 \beta}  h(e^2  \eta^2 / \zeta^2)$
 
 where:
-* $\zeta^2 = L^2/L^2_{max}(E)$
+* $\zeta^2 = L^2/L^2_{\mathrm{max}}(E)$
 
-* $\eta^2  = L_z^2/L^2_{max}(E)$
+* $\eta^2  = L_z^2/L^2_{\mathrm{max}}(E)$
 
 * $e^2 = 1 - q^2$
 
