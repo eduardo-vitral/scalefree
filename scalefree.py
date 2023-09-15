@@ -520,12 +520,15 @@ def mock(
         if split[j] == r"ways):\n":
             binneyb = np.asarray([float(split[j + 1])])
             rms1 = np.asarray([float(split[j + 2])])
-            rms2 = np.asarray([float(split[j + 3].replace(r"\n',", r""))])
+            rms2 = np.asarray([float(split[j + 3].replace(r"\n", r""))])
+        if split[j] == r"system\n":
+            mphi = np.asarray([float(split[j + 1].replace(r"\n',", r""))])
 
     if debug is True:
         print("\nBinney beta:", binneyb)
         print("RMS from method 1:", rms1)
         print("RMS from method 2:", rms2)
+        print("Mean PHI over system:", mphi)
     data = np.loadtxt(prefix + "output.txt")
     p = subprocess.run(
         ["rm", prefix + "output.txt"],

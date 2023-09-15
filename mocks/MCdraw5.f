@@ -134,6 +134,7 @@ C
       vr2sum = 0.0D0
       vt2sum = 0.0D0
       v2sum  = 0.0D0
+      vp1sum = 0.0D0
 C      
       DO i=1,Nsamp
 C
@@ -207,13 +208,17 @@ C
         vthsec  = (1.0D0/(rcur**delta))*RHOVELMOM(thcur,0,2,0)/rho
         vphsec  = (1.0D0/(rcur**delta))*RHOVELMOM(thcur,0,0,2)/rho
 C
+        vphav   = (1.0D0/(rcur**(delta/2.0D0))) *
+     &            RHOVELMOM(thcur,0,0,1) / rho
+        vphdisp = SQRT(MAX(0.0D0,(vphsec-(vphav**2))))
+C        
 CCCCCCCCCC
 C        
 C Draw Gaussian deviates from the intrinsic velocity dispersions
 C        
         vrcur  = GASDEV(IDUM) * SQRT(vradsec)
         vthcur = GASDEV(IDUM) * SQRT(vthsec)
-        vphcur = GASDEV(IDUM) * SQRT(vphsec)
+        vphcur = vphav + (GASDEV(IDUM) * vphdisp)
 C
 C Write phase-space coordinates of Monte-Carlo points
 C
@@ -241,6 +246,7 @@ C
         vr2sum  = vr2sum + (vrcur**2)
         vt2sum  = vt2sum + (vthcur**2) + (vphcur**2)
         v2sum   = v2sum  + ((vx**2)+(vy**2)+(vz**2))
+        vp1sum  = vp1sum + vphcur
 C
 C End the i-loop over data points
 C        
@@ -256,6 +262,10 @@ C
       WRITE (*,'(F10.6,A10,2F10.6)') betabin, ' ',
      &   SQRT(((vr2sum+vt2sum)/DBLE(Nsamp))), 
      &   SQRT((v2sum/DBLE(Nsamp)))
+C
+      WRITE (*,*) ' '
+      WRITE (*,*) 'Mean v_phi over whole system'
+      WRITE (*,'(F10.6)') vp1sum/DBLE(Nsamp)
 C      
 CCCCCCCCCCCCCCCCCCCC
 C
