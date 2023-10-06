@@ -255,13 +255,22 @@ def vprofile(
                         "beta": float(split[j + 6].replace(r"\n", r"")),
                     }
                 if split[j] == r"<v^4>_p\n":
-                    projmom = {
-                        "<rho>_p": float(split[j + 1]),
-                        "<v>_p": float(split[j + 2]),
-                        "<v^2>_p": float(split[j + 3]),
-                        "<v^3>_p": float(split[j + 4]),
-                        "<v^4>_p": float(split[j + 5].replace(r"\n", r"")),
-                    }
+                    try:
+                        projmom = {
+                            "<rho>_p": float(split[j + 1]),
+                            "<v>_p": float(split[j + 2]),
+                            "<v^2>_p": float(split[j + 3]),
+                            "<v^3>_p": float(split[j + 4]),
+                            "<v^4>_p": float(split[j + 5].replace(r"\n", r"")),
+                        }
+                    except ValueError:
+                        projmom = {
+                            "<rho>_p": float(split[j + 1]),
+                            "<v>_p": float(split[j + 2]),
+                            "<v^2>_p": float(split[j + 3]),
+                            "<v^3>_p": np.nan,
+                            "<v^4>_p": np.nan,
+                        }
                 if split[j] == r"<v^4>_p\n************":
                     projmom = {
                         "<rho>_p": np.nan,
