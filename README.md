@@ -26,7 +26,7 @@ with anisotropic velocity distributions in spherical potentials.
                 Tel : (+1) 410 338 4931\
                 Fax : (+1) 410 338 4596\
                 e-mail   : marel@stsci.edu\
-                homepage : http://sol.stsci.edu/~marel/
+                homepage : https://www.stsci.edu/~marel/
  
 * Jos H. J. de Bruijne,
 
@@ -52,7 +52,7 @@ with anisotropic velocity distributions in spherical potentials.
                 3700 San Martin Drive\
                 Baltimore, MD 21218\
                 e-mail   : evitral@stsci.edu\
-                homepage : http://www.iap.fr/useriap/vitral/index.html
+                homepage : https://eduardo-vitral.github.io
 
 ### Summary of the method
  
@@ -77,7 +77,7 @@ elliptical galaxies.
 
 ### References
  
-The method and some applications are discussed in the following paper:
+The method and some applications are discussed in the following papers:
 ``` 
    `Scale-free dynamical models for galaxies: 
     flattened densities in spherical potentials'
@@ -85,6 +85,14 @@ The method and some applications are discussed in the following paper:
        MNRAS, 282, 909-925, 1996 
 ```
 which can be retrieved at this [link](https://ui.adsabs.harvard.edu/abs/1996MNRAS.282..909D/abstract).
+
+``` 
+   `HSTPROMO Internal Proper Motion Kinematics of Dwarf Spheroidal Galaxies: 
+    I. Velocity Anisotropy and Dark Matter Cusp Slope of Draco'
+       Vitral E., van der Marel R.P., Sohn T.S., et al. 
+       ApJ, 970, 1, 2024 
+```
+which can be retrieved at this [link](https://ui.adsabs.harvard.edu/abs/2024ApJ...970....1V/abstract).
  
 
 ### Acknowledgments
@@ -92,8 +100,8 @@ which can be retrieved at this [link](https://ui.adsabs.harvard.edu/abs/1996MNRA
 If you have found this software useful for your research, we would
 appreciate an acknowledgment to *"use of the Scale-free Modeling
 Software developed by R.P. van der Marel, J.H.J. de Bruijne and E. Vitral"*, 
-along with a citation to the paper from the **References** section above.
-The respective `BibTeX` format is:
+along with a citation to the papers from the **References** section above.
+The respective `BibTeX` formats are:
 
 ```bibtex
 @ARTICLE{1996MNRAS.282..909D,
@@ -111,6 +119,27 @@ archivePrefix = {arXiv},
        eprint = {astro-ph/9601044},
  primaryClass = {astro-ph},
        adsurl = {https://ui.adsabs.harvard.edu/abs/1996MNRAS.282..909D},
+      adsnote = {Provided by the SAO/NASA Astrophysics Data System}
+}
+```
+
+```bibtex
+@ARTICLE{2024ApJ...970....1V,
+       author = {{Vitral}, Eduardo and {van der Marel}, Roeland P. and {Sohn}, Sangmo Tony and {Libralato}, Mattia and {del Pino}, Andr{\'e}s and {Watkins}, Laura L. and {Bellini}, Andrea and {Walker}, Matthew G. and {Besla}, Gurtina and {Pawlowski}, Marcel S. and {Mamon}, Gary A.},
+        title = "{HSTPROMO Internal Proper-motion Kinematics of Dwarf Spheroidal Galaxies. I. Velocity Anisotropy and Dark Matter Cusp Slope of Draco}",
+      journal = {\apj},
+     keywords = {Dark matter, Dwarf spheroidal galaxies, Astronomy data analysis, Proper motions, Stellar kinematics, Stellar dynamics, Galaxy dynamics, Galaxy structure, 353, 420, 1858, 1295, 1608, 1596, 591, 622, Astrophysics - Astrophysics of Galaxies, Astrophysics - Cosmology and Nongalactic Astrophysics},
+         year = 2024,
+        month = jul,
+       volume = {970},
+       number = {1},
+          eid = {1},
+        pages = {1},
+          doi = {10.3847/1538-4357/ad571c},
+archivePrefix = {arXiv},
+       eprint = {2407.07769},
+ primaryClass = {astro-ph.GA},
+       adsurl = {https://ui.adsabs.harvard.edu/abs/2024ApJ...970....1V},
       adsnote = {Provided by the SAO/NASA Astrophysics Data System}
 }
 ```
