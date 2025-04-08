@@ -246,14 +246,39 @@ def vprofile(
                         "<v_ph^2>": float(split[j + 5].replace(r"\n", r"")),
                     }
                 if split[j] == r"beta\n":
-                    intmom = {
-                        "rho": float(split[j + 1]),
-                        "<v_ph>": float(split[j + 2]),
-                        "<v_r^2>": float(split[j + 3]),
-                        "<v_th^2>": float(split[j + 4]),
-                        "<v_ph^2>": float(split[j + 5]),
-                        "beta": float(split[j + 6].replace(r"\n", r"")),
-                    }
+                    try:
+                        intmom = {
+                            "rho": float(split[j + 1]),
+                            "<v_ph>": float(split[j + 2]),
+                            "<v_r^2>": float(split[j + 3]),
+                            "<v_th^2>": float(split[j + 4]),
+                            "<v_ph^2>": float(split[j + 5]),
+                            "beta": float(split[j + 6].replace(r"\n", r"")),
+                        }
+                    except ValueError as e:
+                        # Attempt to recover from a merged string like
+                        # '0.32927815-10.06724344\\n'
+                        merged = split[j + 5]
+                        import re
+
+                        match = re.match(
+                            r"([+-]?\d+\.\d+)([+-]\d+\.\d+)",
+                            merged,
+                        )
+                        if match:
+                            vph2_val = float(match.group(1))
+                            beta_val = float(match.group(2))
+                            intmom = {
+                                "rho": float(split[j + 1]),
+                                "<v_ph>": float(split[j + 2]),
+                                "<v_r^2>": float(split[j + 3]),
+                                "<v_th^2>": float(split[j + 4]),
+                                "<v_ph^2>": vph2_val,
+                                "beta": beta_val,
+                            }
+                        else:
+                            # If not the expected case, re-raise the original error
+                            raise e
                 if split[j] == r"<v^4>_p\n":
                     try:
                         projmom = {
