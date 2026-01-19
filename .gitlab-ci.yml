@@ -8,19 +8,20 @@ test:
     PIP_DISABLE_PIP_VERSION_CHECK: "1"
     POETRY_VIRTUALENVS_IN_PROJECT: "true"
     POETRY_NO_INTERACTION: "1"
-    POETRY_CACHE_DIR: ".cache/pypoetry"
-    PIP_CACHE_DIR: ".cache/pip"
+    POETRY_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pypoetry"
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   cache:
     key:
       files:
         - poetry.lock
+        - pyproject.toml
     paths:
       - .venv/
       - .cache/pypoetry/
       - .cache/pip/
   before_script:
     - python -V
-    - pip install --no-cache-dir poetry==1.8.4
+    - pip install poetry==1.8.4
     - poetry --version
     - poetry install --no-ansi
   script:
