@@ -3,22 +3,22 @@ scalefree.vmoments
 
 Prompt-driven Python wrapper for the ScaleFree Fortran executable.
 
-Key properties
---------------
-- Users pass numeric values (floats/ints/bools), not strings.
-- We do NOT parse result printouts.
-- We DO respond to Fortran prompts (interactive control)
-to ensure correct stdin order.
-- Results are read from the structured ASCII output file produced
-by the modified Fortran code.
-- Fallback: if the file is not produced, we can optionally
-parse ONLY the structured
-  '# kind=...' blocks from stdout (disabled by default).
+Behavior regarding the Fortran backend
+-------------------------------------
+- If exe_path is provided: use it; if missing and gfortran exists,
+we can build it there.
+- If exe_path is not provided:
+  1) use SCALEFREE_EXE env var if set
+  2) else use a cached executable in a user cache directory
+  3) else, if gfortran exists,
+  auto-compile from packaged fortran_src/scalefree.f
+  4) else raise a clear, actionable error instructing how to install gfortran
 
-This wrapper is robust to reordering of prompts
-(including an "Output file" prompt),
-because we match prompt substrings rather than
-relying on a hard-coded input order.
+Note on pip install messages
+----------------------------
+Reliable messages at *pip install time* are not guaranteed for wheels.
+We therefore warn at import-time (non-fatal)
+and error at runtime (fatal if missing).
 """
 
 from __future__ import annotations
@@ -27,9 +27,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Union, List
 
-import subprocess
-import numpy as np
+import os
 import re
+import shutil
+import subprocess
+import warnings
+
+import numpy as np
 
 
 # ---------------------------------------------------------------------
@@ -90,8 +94,8 @@ def _potential_code(potential: Any) -> int:
         mapping = {"kepler": 1, "k": 1, "logarithmic": 2, "log": 2}
         if key not in mapping:
             raise ValueError(
-                f"Unknown potential='{potential}'."
-                + " Use 'kepler'/'logarithmic' or an int 1/2."
+                f"Unknown potential='{potential}'. "
+                "Use 'kepler'/'logarithmic' or an int 1/2."
             )
         return mapping[key]
 
@@ -105,12 +109,205 @@ def _potential_code(potential: Any) -> int:
             return int(v)
 
     raise TypeError(
-        "Could not interpret 'potential'."
-        + "Provide int 1/2,"
-        + " string, "
-        + "callable->int, "
+        "Could not interpret 'potential'. "
+        "Provide int 1/2, string, callable->int, "
         "or an object with ipot/code/fortran_id."
     )
+
+
+# ---------------------------------------------------------------------
+# Backend resolution / compilation helpers
+# ---------------------------------------------------------------------
+
+
+class ScaleFreeBackendError(RuntimeError):
+    """Raised when the Fortran backend cannot be found or built."""
+
+
+def _have_gfortran() -> bool:
+    return shutil.which("gfortran") is not None
+
+
+def _site_packages_root() -> Path:
+    # scalefree/vmoments.py -> scalefree/ -> site-packages/
+    return Path(__file__).resolve().parent.parent
+
+
+def _packaged_fortran_source() -> Path:
+    """
+    Locate the packaged Fortran source.
+    In your wheel listing, this is installed as:
+      site-packages/fortran_src/scalefree.f
+    """
+    src = _site_packages_root() / "fortran_src" / "scalefree.f"
+    return src
+
+
+def _user_cache_dir() -> Path:
+    """
+    Cross-platform-ish cache directory without extra dependencies.
+    - Linux: $XDG_CACHE_HOME/scalefree or ~/.cache/scalefree
+    - macOS: ~/Library/Caches/scalefree
+    - Windows: %LOCALAPPDATA%\\scalefree\\Cache
+    """
+    if os.name == "nt":
+        base = os.environ.get("LOCALAPPDATA") or str(
+            Path.home() / "AppData" / "Local",
+        )
+        return Path(base) / "scalefree" / "Cache"
+
+    # POSIX
+    if sys_platform := os.environ.get("OSTYPE", "").lower():
+        # not fully reliable; keep simple fallback below
+        _ = sys_platform
+
+    if (
+        os.uname().sysname
+        if hasattr(
+            os,
+            "uname",
+        )
+        else ""
+    ).lower() == "darwin":
+        return Path.home() / "Library" / "Caches" / "scalefree"
+
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    if xdg:
+        return Path(xdg) / "scalefree"
+    return Path.home() / ".cache" / "scalefree"
+
+
+def _default_cached_exe() -> Path:
+    exe_name = "scalefree.e" if os.name != "nt" else "scalefree.exe"
+    return _user_cache_dir() / exe_name
+
+
+def _compile_backend(*, exe: Path, src: Path) -> None:
+    """
+    Compile the Fortran backend. Raises ScaleFreeBackendError on failure.
+    """
+    if not _have_gfortran():
+        raise ScaleFreeBackendError(_missing_gfortran_message())
+
+    if not src.exists():
+        raise ScaleFreeBackendError(
+            "ScaleFree Fortran source file was not "
+            "found inside the installation.\n\n"
+            f"Expected: {src}\n"
+            "This likely means the wheel/sdist was built without "
+            "including fortran_src/scalefree.f."
+        )
+
+    exe.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = ["gfortran", "-O2", "-std=legacy", "-o", str(exe), str(src)]
+    try:
+        p = subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        raise ScaleFreeBackendError(
+            "gfortran was found, "
+            "but compilation of the ScaleFree backend failed.\n\n"
+            f"Command: {' '.join(cmd)}\n\n"
+            f"STDOUT:\n{e.stdout}\n\nSTDERR:\n{e.stderr}\n"
+        ) from e
+
+    # Ensure executable bit on POSIX
+    if os.name != "nt":
+        try:
+            mode = exe.stat().st_mode
+            exe.chmod(mode | 0o111)
+        except Exception:
+            # Non-fatal; execution may still work depending on umask/fs
+            pass
+
+
+def _missing_gfortran_message() -> str:
+    return (
+        "ScaleFree Fortran backend is not available.\n\n"
+        "This package requires a Fortran compiler (gfortran) "
+        "to build the backend executable.\n"
+        "Please install gfortran and re-run.\n\n"
+        "Typical install commands:\n"
+        "  Debian/Ubuntu:  sudo apt-get install gfortran\n"
+        "  Fedora:         sudo dnf install gcc-gfortran\n"
+        "  macOS (brew):   brew install gcc    # provides gfortran\n"
+        "  Windows:        use WSL or MSYS2 to install gfortran\n\n"
+        "Alternatively, if you already built the executable elsewhere, set:\n"
+        "  export SCALEFREE_EXE=/path/to/scalefree.e\n"
+        "or pass exe_path=... explicitly."
+    )
+
+
+def _resolve_executable(
+    exe_path: Optional[Union[str, Path]], workdir: Optional[Union[str, Path]]
+) -> tuple[Path, Path]:
+    """
+    Resolve and (if needed) build the backend executable.
+
+    Returns (exe, resolved_workdir).
+    """
+    # Workdir: if caller provides, respect it; else pick a safe default
+    if workdir is not None:
+        wd = Path(workdir).expanduser().resolve()
+        wd.mkdir(parents=True, exist_ok=True)
+    else:
+        # Prefer cache dir so installed wheels
+        # do not try to write into site-packages
+        wd = _user_cache_dir()
+        wd.mkdir(parents=True, exist_ok=True)
+
+    # 1) explicit exe_path
+    if exe_path is not None:
+        exe = Path(exe_path).expanduser().resolve()
+        if exe.exists():
+            return exe, wd
+        # If they provided an exe_path that doesn't exist,
+        # build there if possible
+        src = _packaged_fortran_source()
+        _compile_backend(exe=exe, src=src)
+        return exe, wd
+
+    # 2) env var
+    env = os.environ.get("SCALEFREE_EXE")
+    if env:
+        exe = Path(env).expanduser().resolve()
+        if exe.exists():
+            return exe, wd
+        raise ScaleFreeBackendError(
+            f"SCALEFREE_EXE is set but does not exist: {exe}\n"
+            "Either unset SCALEFREE_EXE or point it to a valid"
+            "compiled executable."
+        )
+
+    # 3) cached exe
+    cached = _default_cached_exe()
+    if cached.exists():
+        return cached, wd
+
+    # 4) build into cache if gfortran exists; else fail with clear instructions
+    src = _packaged_fortran_source()
+    _compile_backend(exe=cached, src=src)
+    return cached, wd
+
+
+# Best-effort import-time warning (non-fatal).
+# This is the closest portable approximation to a "pip install warning".
+try:
+    _cached = _default_cached_exe()
+    _src = _packaged_fortran_source()
+    if (not _cached.exists()) and _src.exists() and (not _have_gfortran()):
+        warnings.warn(
+            "scalefree: gfortran not found. "
+            "The Fortran backend will not be usable until "
+            "you install gfortran. "
+            "See scalefree.vmoments.ScaleFreeBackendError "
+            "for install instructions.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+except Exception:
+    # Never fail import due to warning logic
+    pass
 
 
 # ---------------------------------------------------------------------
@@ -139,11 +336,6 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
     Recognizes:
       - "# kind=XYZ" blocks with optional "# columns: ..." line
       - "# vp_table iproj X" blocks with optional "# columns: ..." line
-
-    Returns a dict of blocks:
-      blocks[kind] = {"columns": [...],
-      "data": np.ndarray, "by_iproj": {...} (optional)}
-      blocks["vp_table"][iproj] = {"columns": [...], "data": np.ndarray}
     """
     lines = [ln.rstrip("\n") for ln in text.splitlines()]
     blocks: Dict[str, Any] = {}
@@ -242,21 +434,15 @@ class ScaleFreeRunner:
 
     def __init__(
         self,
-        exe_path: Union[str, Path],
+        exe_path: Optional[Union[str, Path]] = None,
         workdir: Optional[Union[str, Path]] = None,
     ):
-        self.exe_path = Path(exe_path).expanduser().resolve()
+        exe, wd = _resolve_executable(exe_path, workdir)
+        self.exe_path = exe
+        self.workdir = wd
+
         if not self.exe_path.exists():
             raise FileNotFoundError(f"Executable not found: {self.exe_path}")
-        self.workdir = (
-            Path(
-                workdir,
-            )
-            .expanduser()
-            .resolve()
-            if workdir
-            else self.exe_path.parent
-        )
 
     def vprofile(
         self,
@@ -277,12 +463,9 @@ class ScaleFreeRunner:
         # eps if Romberg; nGL if Gauss-Legendre (0 -> default)
         algorithm: int = 1,
         # VP algorithm (1 default)
-        maxmom: int = 30,
-        # max order/number of moments (depends on your Fortran prompts)
+        maxmom: int = 4,
         average: bool = False,
-        # if True, use iwhat=2 and 3
         usevp: bool = False,
-        # currently only influences whether we answer certain prompts
         verbose_vp: int = 0,
         output_path: Optional[Union[str, Path]] = "out.txt",
         timeout_s: int = 120,
@@ -291,14 +474,6 @@ class ScaleFreeRunner:
     ) -> ScaleFreeResult:
         """
         Drives the interactive Fortran executable via prompt matching.
-
-        The run sequence is:
-          - intrinsic (iwhat=0 or 2)
-          - then projected (iwhat=1 or 3)
-        in a single session, using the built-in
-        "Calculate something else?" prompt.
-
-        Returns ScaleFreeResult with parsed blocks.
         """
         ipot = _potential_code(potential)
 
@@ -317,14 +492,12 @@ class ScaleFreeRunner:
 
         out_path = self.workdir / outname
 
-        # Map prompt fragments to responses
         answers = {
             "Kepler (1) or Logarithmic (2)": str(ipot),
             "Power-law slope gamma": _fmt(gamma),
             "Intrinsic axial ratio q": _fmt(q),
             "Case I (1) or Case II (2) DF": str(int(df)),
             "Case I (1) or Case II (2)": str(int(df)),
-            # tolerate variant prompt
             "Anisotropy parameter beta": _fmt(beta),
             "Odd part parameters s and t": f"{_fmt(s)} {_fmt(t)}",
             "Viewing inclination i": _fmt(inclination),
@@ -337,10 +510,8 @@ class ScaleFreeRunner:
             "Give the maximum number of projected moments": str(int(maxmom)),
             "Give the number of projected moments": str(int(maxmom)),
             "Output file": outname,
-            # matches "Output file for results ..." variations
         }
 
-        # Choose iwhat values based on average flag
         if average:
             iwhat_intr = 2
             iwhat_proj = 3
@@ -351,44 +522,35 @@ class ScaleFreeRunner:
         phase = {"step": 0}  # 0 intrinsic, 1 projected
 
         def respond(line: str) -> Optional[str]:
-            # Direct prompt matches
             for key, val in answers.items():
                 if key in line:
                     return val
 
-            # iwhat prompt
             if "Calculate intrinsic (0) or projected (1)" in line:
                 return (
-                    str(iwhat_intr)
-                    if phase["step"] == 0
-                    else str(
-                        iwhat_proj,
+                    str(
+                        iwhat_intr,
                     )
+                    if phase["step"] == 0
+                    else str(iwhat_proj)
                 )
 
-            # theta prompt (intrinsic)
             if "Give angle theta in the meridional plane" in line:
                 return _fmt(theta)
 
-            # xi prompt (projected)
             if "Give angle on the projected plane" in line:
                 return _fmt(xi)
 
-            # verbose prompt (only for projected modes)
             if "Give verbose output of intermediate steps" in line:
                 return str(int(verbose_vp))
 
-            # Some codes explicitly ask whether to compute/use VPs;
-            # if present, answer from usevp.
             if (
-                "Calculate VPs" in line
-                or "Use VPs" in line
-                or "VP" in line
-                and "?" in line
+                ("Calculate VPs" in line)
+                or ("Use VPs" in line)
+                or ("VP" in line and "?" in line)
             ):
                 return "1" if usevp else "0"
 
-            # continue? ("Calculate something else for this model?")
             if "Calculate something else for this model" in line:
                 if phase["step"] == 0:
                     phase["step"] = 1
@@ -397,7 +559,6 @@ class ScaleFreeRunner:
 
             return None
 
-        # Run Fortran interactively
         p = subprocess.Popen(
             [str(self.exe_path)],
             cwd=str(self.workdir),
@@ -441,7 +602,6 @@ class ScaleFreeRunner:
                 f"STDOUT (first 2000 chars):\n{stdout_text[:2000]}\n"
             )
 
-        # Prefer parsing the file output
         if out_path.exists():
             raw = out_path.read_text(encoding="utf-8", errors="replace")
             blocks = parse_scalefree_output(raw)
@@ -453,7 +613,6 @@ class ScaleFreeRunner:
                 stderr=stderr_text,
             )
 
-        # Optional fallback: parse structured blocks from stdout
         if parse_stdout_fallback:
             structured = "\n".join(
                 [
@@ -476,10 +635,9 @@ class ScaleFreeRunner:
         raise RuntimeError(
             "Fortran returned success but output file was not found.\n"
             f"Expected: {out_path}\n"
-            "If the Fortran code does not prompt"
-            + " for an output filename (or writes elsewhere),\n"
-            "update the prompt match key in answers['Output file']"
-            + " or enable parse_stdout_fallback=True."
+            "If the Fortran code does not prompt for an output filename\n"
+            "(or writes elsewhere), update the prompt match key in \n"
+            "answers['Output file'] or enable parse_stdout_fallback=True."
         )
 
 
@@ -490,7 +648,7 @@ class ScaleFreeRunner:
 
 def vprofile(
     *,
-    exe_path: Union[str, Path],
+    exe_path: Optional[Union[str, Path]] = None,
     potential: Any,
     gamma: float,
     q: float,
@@ -512,15 +670,14 @@ def vprofile(
     timeout_s: int = 120,
     parse_stdout_fallback: bool = False,
     debug_prompts: bool = False,
+    workdir: Optional[Union[str, Path]] = None,
 ) -> ScaleFreeResult:
     """
     Convenience function that instantiates a runner and executes vprofile.
 
-    This keeps the public API simple:
-        import scalefree
-        res = scalefree.vprofile(exe_path=..., ...)
+    Users can omit exe_path; the backend will be resolved/built automatically.
     """
-    runner = ScaleFreeRunner(exe_path=exe_path)
+    runner = ScaleFreeRunner(exe_path=exe_path, workdir=workdir)
     return runner.vprofile(
         potential=potential,
         gamma=gamma,

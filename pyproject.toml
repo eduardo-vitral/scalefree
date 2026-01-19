@@ -2,9 +2,33 @@
 name = "scalefree"
 version = "0.1.0"
 description = "Scale-free DF velocity moments and VP calculations with a Fortran backend."
-authors = ["Eduardo Vitral <eduardo.vitral@roe.ac.uk>, Roeland van der Marel <marel@stsci.edu>"]
-readme = "README.md"
+authors = [
+  "Eduardo Vitral <eduardo.vitral@roe.ac.uk>",
+  "Roeland van der Marel <marel@stsci.edu>",
+]
 license = "MIT"
+readme = "README.md"
+homepage = "https://gitlab.com/eduardo-vitral/scalefree"
+repository = "https://gitlab.com/eduardo-vitral/scalefree"
+keywords = [
+  "astronomy",
+  "dynamics",
+  "distribution-function",
+  "fortran",
+  "kinematics",
+  "velocity-profile",
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Fortran",
+  "Operating System :: OS Independent",
+  "Topic :: Scientific/Engineering :: Astronomy",
+]
 packages = [{ include = "scalefree" }]
 
 # Include non-Python files in sdist/wheel (Fortran sources; docs)

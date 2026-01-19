@@ -1,14 +1,12 @@
-"""
-scalefree package
+from __future__ import annotations
 
-Public API:
-- vprofile: main user-facing function to compute moments/VPs
-via the Fortran backend
-- ScaleFreeRunner: advanced use
-(reuse a runner instance, custom workdir, etc.)
-- ScaleFreeResult: structured return container
-"""
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("scalefree")
+except PackageNotFoundError:
+    __version__ = "0.0.0"
 
 from .vmoments import vprofile, ScaleFreeRunner, ScaleFreeResult
 
-__all__ = ["vprofile", "ScaleFreeRunner", "ScaleFreeResult"]
+__all__ = ["vprofile", "ScaleFreeRunner", "ScaleFreeResult", "__version__"]
