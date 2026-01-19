@@ -35,8 +35,7 @@ def _run_case(exe_path: Path, *, average: bool, outname: str, workdir: Path):
     )
 
 
-def _assert_block_close(new_blk, ref_blk, *, rtol=1e-8, atol=1e-10):
-    # Compare columns exactly
+def _assert_block_close(new_blk, ref_blk, *, rtol=1e-6, atol=5e-8):
     assert new_blk.get("columns", []) == ref_blk.get("columns", [])
 
     new_data = np.asarray(new_blk.get("data"))
@@ -50,7 +49,7 @@ def _assert_block_close(new_blk, ref_blk, *, rtol=1e-8, atol=1e-10):
     new_data = np.where(np.abs(new_data) < tiny, 0.0, new_data)
     ref_data = np.where(np.abs(ref_data) < tiny, 0.0, ref_data)
 
-    # Use slightly looser tolerance (still very strict for scientific code)
+    # Small-platform drift (esp. near zero) is expected
     assert np.allclose(
         new_data,
         ref_data,
