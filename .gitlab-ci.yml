@@ -1,9 +1,10 @@
 stages:
   - test
+  - build
 
-test:
+build:
   image: python:3.11
-  stage: test
+  stage: build
   variables:
     PIP_DISABLE_PIP_VERSION_CHECK: "1"
     POETRY_VIRTUALENVS_IN_PROJECT: "true"
@@ -25,7 +26,9 @@ test:
     - poetry --version
     - poetry install --no-ansi
   script:
-    - apt-get update
-    - apt-get install -y --no-install-recommends gfortran
-    - gfortran -O2 -std=legacy -o fortran_src/scalefree.e fortran_src/scalefree.f
-    - poetry run pytest -q
+    - poetry build
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths:
+      - dist/
