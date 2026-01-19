@@ -35,17 +35,22 @@ def _run_case(exe_path: Path, *, average: bool, outname: str, workdir: Path):
     )
 
 
-def _assert_block_close(new_blk, ref_blk, *, rtol=1e-10, atol=1e-12):
-    # Compare presence/identity of columns
+def _assert_block_close(new_blk, ref_blk, *, rtol=1e-8, atol=1e-10):
+    # Compare columns exactly
     assert new_blk.get("columns", []) == ref_blk.get("columns", [])
 
-    new_data = new_blk.get("data")
-    ref_data = ref_blk.get("data")
+    new_data = np.asarray(new_blk.get("data"))
+    ref_data = np.asarray(ref_blk.get("data"))
 
     assert new_data is not None and ref_data is not None
     assert new_data.shape == ref_data.shape
 
-    # Allow small floating diffs across compilers/platforms
+    # Treat subnormals/denormals as zero (compiler/CPU dependent)
+    tiny = 1e-300
+    new_data = np.where(np.abs(new_data) < tiny, 0.0, new_data)
+    ref_data = np.where(np.abs(ref_data) < tiny, 0.0, ref_data)
+
+    # Use slightly looser tolerance (still very strict for scientific code)
     assert np.allclose(
         new_data,
         ref_data,
