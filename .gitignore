@@ -1,1 +1,23 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dylib
+*.dll
+
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Fortran builds
+fortran_src/*.o
+fortran_src/*.mod
+fortran_src/scalefree.e
+scalefree.e
+
+# test outputs
+out_*.txt
+
 .DS_Store

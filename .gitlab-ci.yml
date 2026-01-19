@@ -1,0 +1,21 @@
+stages:
+  - test
+
+test:
+  image: python:3.11
+  stage: test
+  variables:
+    PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    POETRY_VIRTUALENVS_IN_PROJECT: "true"
+  before_script:
+    - python -V
+    - pip install --no-cache-dir poetry==1.8.4
+    - poetry --version
+    - poetry install --no-interaction --no-ansi
+  script:
+    # Build the Fortran executable needed by tests
+    - apt-get update
+    - apt-get install -y --no-install-recommends gfortran
+    - gfortran -O2 -std=legacy -o fortran_src/scalefree.e fortran_src/scalefree.f
+    # Run tests
+    - poetry run pytest -q

@@ -21,6 +21,8 @@ CCCCCCCCCCCCCCCCCCCC
 C
       DIMENSION xmom(0:100),darr(0:100),harr(0:100),
      &          velar(101),vpval(101)
+      CHARACTER*256 outpath
+      INTEGER iout
 C
 CCCCCCCCCCCCCCCCCCCC
 C
@@ -63,6 +65,11 @@ C Parameter that determines the requested smoothness, as fraction of
 C the VP maximum.
 C
       COMMON /verbose/ iverb
+C
+      COMMON /projcase/ iproj
+C
+C iproj=1 (LOS), 2 (POSR), 3 (POST)
+C
 C
 C Determines whether verbose output should be generated for VP calculations
 C
@@ -221,6 +228,23 @@ C Now calculate anything that the user may be interested in
 C
 CCCCCCCCCCCCCCCCCCCC
 C
+C
+CCCCCCCCCCCCCCCCCCCC
+C
+C Select where to write numerical results (table output)
+C
+      iproj = 1
+      WRITE (*,*) 'Output file for results (blank = STDOUT)'
+      READ (*,'(A)') outpath
+      lout = LENSTR(outpath)
+      IF (lout.GT.0) THEN
+        iout = 20
+        OPEN(unit=iout,file=outpath(1:lout),status='unknown')
+      ELSE
+        iout = 6
+      END IF
+      WRITE (*,*) ' '
+C
 51    WRITE (*,*) 'Calculate intrinsic (0) or projected (1)'
       WRITE (*,*) 'kinematical quantities ?'
       WRITE (*,*) 'This gives results for a fixed angle in the'
@@ -285,13 +309,18 @@ C Transform to radians
 C
         xi = (xi/180.0D0)*pi
 C
-        WRITE (*,*) 'Projected velocity moments:'
-        WRITE (*,'(5A12)') '<rho>_p','<v>_p','<v^2>_p','<v^3>_p',
-     &                     '<v^4>_p'
-        WRITE (*,'(6F12.8)') RHOPROJ(xi),PROJMOM(xi,1),
-     &                       PROJMOM(xi,2),PROJMOM(xi,3),
-     &                       PROJMOM(xi,4)
-        WRITE (*,*) ' '
+        rhop = RHOPROJ(xi)
+        WRITE (iout,'(A)') '# kind=projected_point'
+        WRITE (iout,'(A,F16.8)') '# xi_deg ', (xi*180.0D0/pi)
+        WRITE (iout,'(A)') '# columns: iproj rho_p v1 v2 v3 v4'
+        DO iproj=1,3
+          v1 = PROJMOM(xi,1)
+          v2 = PROJMOM(xi,2)
+          v3 = PROJMOM(xi,3)
+          v4 = PROJMOM(xi,4)
+          WRITE (iout,'(I3,1X,5E24.16)') iproj, rhop, v1, v2, v3, v4
+        END DO
+        WRITE (iout,*) ' '
 C
       ELSE IF (iwhat.EQ.3) THEN
 C
@@ -301,12 +330,18 @@ C
         rhop3 = RHOPROJMOMAV(3)
         rhop4 = RHOPROJMOMAV(4)
 C         
-        WRITE (*,*) 'Projected velocity moments:'
-        WRITE (*,'(5A12)') '<rho>_p','<v>_p','<v^2>_p','<v^3>_p',
-     &                     '<v^4>_p'
-        WRITE (*,'(6F12.8)') rhop0, rhop1/rhop0, rhop2/rhop0,
-     &                              rhop3/rhop0, rhop4/rhop0
-        WRITE (*,*) ' '
+        WRITE (iout,'(A)') '# kind=projected_circle_average'
+        WRITE (iout,'(A)') '# columns: iproj rho_p v1 v2 v3 v4'
+        DO iproj=1,3
+          rhop0 = RHOPROJMOMAV(0)
+          rhop1 = RHOPROJMOMAV(1)
+          rhop2 = RHOPROJMOMAV(2)
+          rhop3 = RHOPROJMOMAV(3)
+          rhop4 = RHOPROJMOMAV(4)
+          WRITE (iout,'(I3,1X,5E24.16)') iproj, rhop0, rhop1/rhop0,
+     &                              rhop2/rhop0, rhop3/rhop0, rhop4/rhop0
+        END DO
+        WRITE (iout,*) ' '
 C
       ELSE
 C
@@ -333,36 +368,37 @@ C
         READ (*,*) iverb
         WRITE (*,*) ' '
 C
-C Calculate the VP and VP coefficients
+C Calculate the VP and VP coefficients for all projected components
 C
-        IF (xlam.LT.0.0) THEN
-          CALL VPANALYSE_CONV (iwhat,xi,nord,xmom,gam0,V0,sig0,darr,
+        WRITE (iout,'(A)') '# kind=vp'
+        WRITE (iout,'(A)') '# columns: iproj true_gam true_V true_sig'
+        WRITE (iout,'(A)') '#          gauss_gam gauss_V gauss_sig'
+        WRITE (iout,'(A)') '#         h0 h1 h2 h3 h4 h5 h6'
+
+        DO iproj=1,3
+          IF (xlam.LT.0.0) THEN
+            CALL VPANALYSE_CONV (iwhat,xi,nord,xmom,gam0,V0,sig0,darr,
      &                      velar,vpval,nvel,gam,Vgau,sig,harr)
-        ELSE
-          CALL VPANALYSE_FIX (iwhat,xi,maxord,xmom,gam0,V0,sig0,darr,
+          ELSE
+            CALL VPANALYSE_FIX (iwhat,xi,maxord,xmom,gam0,V0,sig0,darr,
      &                      velar,vpval,nvel,gam,Vgau,sig,harr)
-        END IF
+          END IF
 C
-C Write the results
+          WRITE (iout,'(I3,1X,6E24.16,1X,7F10.5)') iproj, gam0, V0, sig0,
+     &            gam, Vgau, sig, harr(0), harr(1), harr(2), harr(3),
+     &            harr(4), harr(5), harr(6)
 C
-        WRITE (*,'(A23)') 
-     &        'VP coefficients      : '
-        WRITE (*,'(A23,3F12.8)') 
-     &        'true      (gam,V,sig): ',gam0,V0,sig0
-        WRITE (*,'(A23,3F12.8)') 
-     &        'Gauss-fit (gam,V,sig): ',gam,Vgau,sig
-        WRITE (*,'(A23,12F8.4)')
-     &        'h0, h1, h2, h3, ...  : ',(harr(k),k=0,nord)
-        WRITE (*,*) ' '
+C Write the VP solution as a table block (v, VP)
 C
-        WRITE (*,*) 'VanderMonmde matrix VP solution:'
-        WRITE (*,'(2A16)') 'v','VP(v)'
-        DO j=1,nvel
-          WRITE (*,'(2F16.8)') velar(j),vpval(j)
+          WRITE (iout,'(A,I3)') '# vp_table iproj ', iproj
+          WRITE (iout,'(A)') '# columns: v vp'
+          DO j=1,nvel
+            WRITE (iout,'(2E24.16)') velar(j), vpval(j)
+          END DO
+          WRITE (iout,*) ' '
         END DO
-        WRITE (*,*) ' '
 C
-      END IF      
+      END IF
 C      
 CCCCCCCCCCCCCCCCCCCC
 C
@@ -1277,7 +1313,7 @@ C
 C The function RHOPROJ calculates the projected mass density analytically.
 C The function PROJMOM calculates the projected velocity momemnts by
 C numerical 1D integration over the function TOINT. This uses
-C RHOVPOSRMOM, rho times the n-th line-of-sight velocity moment at a given
+C RHOVPROJMOM, rho times the n-th projected velocity moment (selected
 C point in the galaxy.
 C
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
@@ -1319,6 +1355,9 @@ C
 C
       COMMON /losmom/ xxi,nnord
 C
+      COMMON /projcase/ iproj
+C
+C
       COMMON /howint/ iint
 C
       EXTERNAL TOINT,MIDPNT
@@ -1357,6 +1396,9 @@ C
 C
       COMMON /losmom/ xi,nord
 C
+      COMMON /projcase/ iproj
+C
+C
       COMMON /potent/ ipot
 C
 C ipot=1 for Kepler potential and ipot=2 for logarithmic potential
@@ -1379,13 +1421,64 @@ C
 C
       IF (ipot.EQ.1) THEN
         TOINT = (COS(tau)**(gamma-2.0D0+(0.5D0*DBLE(nord)))) *
-     &        RHOVPOSRMOM(theta,phi,nord)
+     &        RHOVPROJMOM(theta,phi,nord)
       ELSE IF (ipot.EQ.2) THEN
         TOINT = (COS(tau)**(gamma-2.0D0)) *
-     &        RHOVPOSRMOM(theta,phi,nord)
+     &        RHOVPROJMOM(theta,phi,nord)
       ELSE
         STOP 'ipot wrong value'
       END IF
+C
+      END
+
+
+      REAL*8 FUNCTION RHOVLOSMOM(theta,phi,nord)
+C
+C Returns rho times the nord-th line-of-sight velocity moment at the
+C point with polar coordinates (theta,phi) in radians, and radius 1
+C (in dimensionless units).
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+C
+      COMMON /param/ gamma, beta, q, alpha, eta
+      COMMON /viewing/ xinc
+C
+      Afac = (COS(phi)*SIN(theta)*SIN(xinc)) + (COS(theta)*COS(xinc))
+      Bfac = (COS(phi)*COS(theta)*SIN(xinc)) - (SIN(theta)*COS(xinc))
+      Cfac = (-1.0D0*SIN(phi)*SIN(xinc))
+C
+      IF (Afac.LT.0.0D0) THEN
+        Asign = -1.0D0        
+      ELSE
+        Asign = 1.0D0        
+      END IF
+      Afac = MAX(1.0D-20,ABS(Afac))
+C
+      IF (Bfac.LT.0.0D0) THEN
+        Bsign = -1.0D0        
+      ELSE
+        Bsign = 1.0D0        
+      END IF
+      Bfac = MAX(1.0D-20,ABS(Bfac))
+C
+      IF (Cfac.LT.0.0D0) THEN
+        Csign = -1.0D0        
+      ELSE
+        Csign = 1.0D0        
+      END IF
+      Cfac = MAX(1.0D-20,ABS(Cfac))
+C
+      RHOVLOSMOM = 0.0D0
+      DO k=0,nord
+        DO j=0,nord-k
+          facln = binomln(nord,k) + binomln(nord-k,j) +
+     &            (DBLE(k)*LOG(Afac)) + (DBLE(j)*LOG(Bfac)) +
+     &            (DBLE(nord-k-j)*LOG(Cfac))
+          RHOVLOSMOM = RHOVLOSMOM + ( EXPP(facln)*
+     &       (Asign**k)*(Bsign**j)*(Csign**(nord-k-j))*
+     &       RHOVELMOM(theta,k,j,nord-k-j) )
+        END DO
+      END DO
 C
       END
 
@@ -1449,6 +1542,81 @@ C
       END DO
 C
       END
+
+
+
+      REAL*8 FUNCTION RHOVPOSTMOM(theta,phi,nord)
+C
+C Returns rho times the nord-th line-of-sight velocity moment at the
+C point with polar coordinates (theta,phi) in radians, and radius 1
+C (in dimensionless units).
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+C
+      COMMON /param/ gamma, beta, q, alpha, eta
+      COMMON /viewing/ xinc
+C
+      SP = SIN(phi)
+      CP = COS(phi)
+      ST = SIN(theta)
+      CT = COS(theta)
+      SX = SIN(xinc)
+      CX = COS(xinc)
+      DEN = SQRT(ST*ST*SP*SP+(CT*SX - ST*CX*CP)**2.0D0)
+C
+      Bfac = SX*SP/DEN
+      Cfac = (CT*SX*CP - ST*CX)/DEN
+C
+      IF (Bfac.LT.0.0D0) THEN
+        Bsign = -1.0D0        
+      ELSE
+        Bsign = 1.0D0        
+      END IF
+      Bfac = MAX(1.0D-20,ABS(Bfac))
+C
+      IF (Cfac.LT.0.0D0) THEN
+        Csign = -1.0D0        
+      ELSE
+        Csign = 1.0D0        
+      END IF
+      Cfac = MAX(1.0D-20,ABS(Cfac))
+C
+      RHOVPOSTMOM = 0.0D0
+      DO j=0,nord
+            facln = binomln(nord,0) + binomln(nord,j) +
+     &      (DBLE(j)*LOG(Bfac)) +
+     &      (DBLE(nord-j)*LOG(Cfac))
+            RHOVPOSTMOM = RHOVPOSTMOM + ( EXPP(facln)*
+     &      (Bsign**j)*(Csign**(nord-j))*
+     &      RHOVELMOM(theta,0,j,nord-j) )
+      END DO
+C
+      END
+
+
+      REAL*8 FUNCTION RHOVPROJMOM(theta,phi,nord)
+C
+C Select the projected component (LOS=1, POSR=2, POST=3)
+C and return rho times the nord-th projected velocity moment at the
+C point with polar coordinates (theta,phi) in radians, and radius 1
+C (in dimensionless units).
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+C
+      COMMON /projcase/ iproj
+C
+      IF (iproj.EQ.1) THEN
+        RHOVPROJMOM = RHOVLOSMOM(theta,phi,nord)
+      ELSE IF (iproj.EQ.2) THEN
+        RHOVPROJMOM = RHOVPOSRMOM(theta,phi,nord)
+      ELSE IF (iproj.EQ.3) THEN
+        RHOVPROJMOM = RHOVPOSTMOM(theta,phi,nord)
+      ELSE
+        STOP 'iproj wrong value'
+      END IF
+C
+      END
+
 
 
 CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC
@@ -3133,4 +3301,23 @@ C
         s=(s+(b-a)*sum/tnm)/3.0D0
       endif
       return
+      END
+
+      INTEGER FUNCTION LENSTR(str)
+C
+C Return effective length of a character string (trailing blanks removed).
+C Returns 0 for an all-blank string.
+C
+      IMPLICIT REAL*8 (a-h,o-z)
+      CHARACTER*(*) str
+      INTEGER i
+      LENSTR = LEN(str)
+      DO i=LEN(str),1,-1
+        IF (str(i:i).NE.' ') THEN
+          LENSTR = i
+          RETURN
+        END IF
+      END DO
+      LENSTR = 0
+      RETURN
       END
