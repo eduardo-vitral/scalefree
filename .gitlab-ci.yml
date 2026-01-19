@@ -2,24 +2,41 @@ stages:
   - test
   - build
 
+variables:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  POETRY_VIRTUALENVS_IN_PROJECT: "true"
+  POETRY_NO_INTERACTION: "1"
+  POETRY_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pypoetry"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  key:
+    files:
+      - poetry.lock
+      - pyproject.toml
+  paths:
+    - .venv/
+    - .cache/pypoetry/
+    - .cache/pip/
+
+test:
+  image: python:3.11
+  stage: test
+  before_script:
+    - python -V
+    - pip install poetry==1.8.4
+    - poetry --version
+    - poetry install --no-ansi
+  script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends gfortran
+    - gfortran -O2 -std=legacy -o fortran_src/scalefree.e fortran_src/scalefree.f
+    - poetry run pytest -q
+
 build:
   image: python:3.11
   stage: build
-  variables:
-    PIP_DISABLE_PIP_VERSION_CHECK: "1"
-    POETRY_VIRTUALENVS_IN_PROJECT: "true"
-    POETRY_NO_INTERACTION: "1"
-    POETRY_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pypoetry"
-    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-  cache:
-    key:
-      files:
-        - poetry.lock
-        - pyproject.toml
-    paths:
-      - .venv/
-      - .cache/pypoetry/
-      - .cache/pip/
+  needs: ["test"]
   before_script:
     - python -V
     - pip install poetry==1.8.4
