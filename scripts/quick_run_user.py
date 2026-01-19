@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-from pathlib import Path
-
 from scalefree import ScaleFreeRunner
 
 
@@ -38,13 +35,7 @@ def print_results(tag: str, res):
 
     if "projected_circle_average" in res.blocks:
         blk = res.blocks["projected_circle_average"]
-        print_table(
-            "projected_circle_average",
-            blk.get("columns", []),
-            blk.get(
-                "data",
-            ),
-        )
+        print_table("projected_circle_average", blk.get("columns", []), blk.get("data"))
 
     if "vp" in res.blocks:
         blk = res.blocks["vp"]
@@ -57,23 +48,13 @@ def print_results(tag: str, res):
         for iproj in sorted(vpt.keys()):
             tbl = vpt[iproj]
             print_table(
-                f"vp_table iproj={iproj}",
-                tbl.get(
-                    "columns",
-                    [],
-                ),
-                tbl.get("data"),
+                f"vp_table iproj={iproj}", tbl.get("columns", []), tbl.get("data")
             )
     else:
         print("\n(No 'vp_table' blocks found.)")
 
 
-def run_case(
-    runner: ScaleFreeRunner,
-    *,
-    average: bool,
-    output_path: str | None,
-):
+def run_case(runner: ScaleFreeRunner, *, average: bool, outname: str):
     return runner.vprofile(
         potential=potential_logarithmic,
         gamma=2.0,
@@ -92,64 +73,22 @@ def run_case(
         average=average,
         usevp=True,
         verbose_vp=0,
-        output_path=output_path,  # None => no persistent files
+        output_path=outname,
         debug_prompts=False,
     )
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Quick sanity"
-        + " check for scalefree "
-        + "(point vs circle-average)."
-    )
-    parser.add_argument(
-        "--exe",
-        type=str,
-        default=None,
-        help="Path to precompiled scalefree executable (optional). "
-        "If omitted, scalefree will auto-resolve/auto-build the backend.",
-    )
-    parser.add_argument(
-        "--workdir",
-        type=str,
-        default=None,
-        help="Work directory for running the backend (optional). "
-        "If omitted, a user cache directory is used.",
-    )
-    parser.add_argument(
-        "--write-files",
-        action="store_true",
-        help="If set, write out_point.txt and out_avg.txt"
-        "in the current directory. "
-        "Otherwise, no files are left behind.",
-    )
-    args = parser.parse_args()
+    # Let scalefree resolve/build the backend automatically.
+    # If gfortran is missing, scalefree will raise a clear error message.
+    runner = ScaleFreeRunner()
 
-    exe_path = Path(args.exe).expanduser().resolve() if args.exe else None
-    workdir = (
-        Path(
-            args.workdir,
-        )
-        .expanduser()
-        .resolve()
-        if args.workdir
-        else None
-    )
-
-    runner = ScaleFreeRunner(exe_path=exe_path, workdir=workdir)
-
-    out_point = "out_point.txt" if args.write_files else None
-    out_avg = "out_avg.txt" if args.write_files else None
-
-    res_point = run_case(runner, average=False, output_path=out_point)
+    res_point = run_case(runner, average=False, outname="out_point.txt")
     print_results("average=False (point)", res_point)
 
-    res_avg = run_case(runner, average=True, output_path=out_avg)
+    res_avg = run_case(runner, average=True, outname="out_avg.txt")
     print_results("average=True (circle-average)", res_avg)
 
-    if args.write_files:
-        print("\nWrote: out_point.txt, out_avg.txt (in current directory)")
     print("\nFinished.")
 
 

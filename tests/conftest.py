@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 import pytest
 
+from scalefree import ScaleFreeRunner
+
 
 def repo_root() -> Path:
     # tests/ is at repo_root/tests/
@@ -10,14 +12,15 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(scope="session")
-def scalefree_exe() -> Path:
-    exe = repo_root() / "fortran_src" / "scalefree.e"
-    if not exe.exists():
-        pytest.skip(
-            f"ScaleFree Fortran executable not found at {exe}. "
-            "Compile it first in CI or locally (gfortran ...)."
-        )
-    return exe
+def runner() -> ScaleFreeRunner:
+    """
+    Use the package's backend resolution (env var / cached exe / auto-compile).
+    This matches the intended user experience after `pip install scalefree`.
+    """
+    try:
+        return ScaleFreeRunner()
+    except Exception as e:
+        pytest.skip(f"ScaleFree backend not available: {e}")
 
 
 @pytest.fixture(scope="session")

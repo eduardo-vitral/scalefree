@@ -10,22 +10,33 @@ we can build it there.
 - If exe_path is not provided:
   1) use SCALEFREE_EXE env var if set
   2) else use a cached executable in a user cache directory
-  3) else, if gfortran exists,
-  auto-compile from packaged fortran_src/scalefree.f
+  3) else, if gfortran exists, auto-compile from packaged
+  fortran_src/scalefree.f
   4) else raise a clear, actionable error instructing how to install gfortran
+
+Behavior regarding output (Option A)
+-----------------------------------
+- Default: do NOT leave output files behind.
+- We still answer the Fortran "Output file" prompt with a temporary filename
+  (so the interactive program never blocks), but we prefer parsing the
+  structured
+  "# kind=..." blocks from STDOUT. Any temporary file is deleted at the end.
+- If the caller provides output_path, we treat it as an explicit
+request to write
+  a persistent file and we parse that file (more stable for regression tests).
 
 Note on pip install messages
 ----------------------------
 Reliable messages at *pip install time* are not guaranteed for wheels.
-We therefore warn at import-time (non-fatal)
-and error at runtime (fatal if missing).
+We therefore warn at import-time (non-fatal) and error at runtime
+(fatal if missing).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, List
+from typing import Any, Dict, Optional, Union, List, Tuple
 
 import os
 import re
@@ -129,18 +140,24 @@ def _have_gfortran() -> bool:
 
 
 def _site_packages_root() -> Path:
-    # scalefree/vmoments.py -> scalefree/ -> site-packages/
+    # scalefree/vmoments.py -> scalefree/ -> (site-packages or repo root)
     return Path(__file__).resolve().parent.parent
 
 
 def _packaged_fortran_source() -> Path:
     """
     Locate the packaged Fortran source.
-    In your wheel listing, this is installed as:
-      site-packages/fortran_src/scalefree.f
+
+    In wheels, this should be installed as:
+      <site-packages>/fortran_src/scalefree.f
+
+    In editable/repo contexts, this typically is:
+      <repo-root>/fortran_src/scalefree.f
+
+    Both are covered because _site_packages_root()
+    is the parent of 'scalefree/'.
     """
-    src = _site_packages_root() / "fortran_src" / "scalefree.f"
-    return src
+    return _site_packages_root() / "fortran_src" / "scalefree.f"
 
 
 def _user_cache_dir() -> Path:
@@ -156,21 +173,17 @@ def _user_cache_dir() -> Path:
         )
         return Path(base) / "scalefree" / "Cache"
 
-    # POSIX
-    if sys_platform := os.environ.get("OSTYPE", "").lower():
-        # not fully reliable; keep simple fallback below
-        _ = sys_platform
-
-    if (
-        os.uname().sysname
-        if hasattr(
-            os,
-            "uname",
-        )
-        else ""
-    ).lower() == "darwin":
+    # macOS
+    sysname = ""
+    if hasattr(os, "uname"):
+        try:
+            sysname = os.uname().sysname.lower()
+        except Exception:
+            sysname = ""
+    if sysname == "darwin":
         return Path.home() / "Library" / "Caches" / "scalefree"
 
+    # Linux/other POSIX
     xdg = os.environ.get("XDG_CACHE_HOME")
     if xdg:
         return Path(xdg) / "scalefree"
@@ -194,15 +207,15 @@ def _compile_backend(*, exe: Path, src: Path) -> None:
             "ScaleFree Fortran source file was not "
             "found inside the installation.\n\n"
             f"Expected: {src}\n"
-            "This likely means the wheel/sdist was built without "
-            "including fortran_src/scalefree.f."
+            "This likely means the wheel/sdist was built without including "
+            "fortran_src/scalefree.f."
         )
 
     exe.parent.mkdir(parents=True, exist_ok=True)
 
     cmd = ["gfortran", "-O2", "-std=legacy", "-o", str(exe), str(src)]
     try:
-        p = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
         raise ScaleFreeBackendError(
             "gfortran was found, "
@@ -217,15 +230,15 @@ def _compile_backend(*, exe: Path, src: Path) -> None:
             mode = exe.stat().st_mode
             exe.chmod(mode | 0o111)
         except Exception:
-            # Non-fatal; execution may still work depending on umask/fs
             pass
 
 
 def _missing_gfortran_message() -> str:
     return (
         "ScaleFree Fortran backend is not available.\n\n"
-        "This package requires a Fortran compiler (gfortran) "
-        "to build the backend executable.\n"
+        "This package requires a Fortran compiler "
+        "(gfortran) to build the backend "
+        "executable.\n"
         "Please install gfortran and re-run.\n\n"
         "Typical install commands:\n"
         "  Debian/Ubuntu:  sudo apt-get install gfortran\n"
@@ -239,8 +252,9 @@ def _missing_gfortran_message() -> str:
 
 
 def _resolve_executable(
-    exe_path: Optional[Union[str, Path]], workdir: Optional[Union[str, Path]]
-) -> tuple[Path, Path]:
+    exe_path: Optional[Union[str, Path]],
+    workdir: Optional[Union[str, Path]],
+) -> Tuple[Path, Path]:
     """
     Resolve and (if needed) build the backend executable.
 
@@ -251,8 +265,6 @@ def _resolve_executable(
         wd = Path(workdir).expanduser().resolve()
         wd.mkdir(parents=True, exist_ok=True)
     else:
-        # Prefer cache dir so installed wheels
-        # do not try to write into site-packages
         wd = _user_cache_dir()
         wd.mkdir(parents=True, exist_ok=True)
 
@@ -275,8 +287,8 @@ def _resolve_executable(
             return exe, wd
         raise ScaleFreeBackendError(
             f"SCALEFREE_EXE is set but does not exist: {exe}\n"
-            "Either unset SCALEFREE_EXE or point it to a valid"
-            "compiled executable."
+            "Either unset SCALEFREE_EXE "
+            "or point it to a valid compiled executable."
         )
 
     # 3) cached exe
@@ -291,22 +303,20 @@ def _resolve_executable(
 
 
 # Best-effort import-time warning (non-fatal).
-# This is the closest portable approximation to a "pip install warning".
 try:
     _cached = _default_cached_exe()
     _src = _packaged_fortran_source()
     if (not _cached.exists()) and _src.exists() and (not _have_gfortran()):
         warnings.warn(
             "scalefree: gfortran not found. "
-            "The Fortran backend will not be usable until "
-            "you install gfortran. "
+            "The Fortran backend will not be usable "
+            "until you install gfortran. "
             "See scalefree.vmoments.ScaleFreeBackendError "
             "for install instructions.",
             RuntimeWarning,
             stacklevel=2,
         )
 except Exception:
-    # Never fail import due to warning logic
     pass
 
 
@@ -325,7 +335,7 @@ class ScaleFreeResult:
 
 
 # ---------------------------------------------------------------------
-# Parser for structured output file
+# Parser for structured output
 # ---------------------------------------------------------------------
 
 
@@ -401,11 +411,11 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
                 dtype=float,
             )
         )
-        block = {"columns": cols if cols else [], "data": arr}
+        block: Dict[str, Any] = {"columns": cols if cols else [], "data": arr}
 
         # Convenience indexing for tables where first column is iproj
         if cols and cols[0].lower() == "iproj" and arr.shape[0] > 0:
-            by_iproj = {}
+            by_iproj: Dict[int, Dict[str, float]] = {}
             for r in arr:
                 ip = int(r[0])
                 by_iproj[ip] = {
@@ -422,14 +432,68 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------
+# STDOUT structured extraction (Option A)
+# ---------------------------------------------------------------------
+
+
+_NUMERIC_ROW_RE = re.compile(
+    r"""^\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:(?:[EeDd])[+-]?\d+)?(?:\s+|$)"""
+)
+
+
+def _extract_structured_from_stdout(stdout_text: str) -> str:
+    """
+    Extract only the structured blocks from STDOUT.
+
+    We keep:
+      - lines starting with '#'
+      - numeric rows ONLY when we are "inside" a block (after a '# kind=' or
+        '# vp_table' marker), stopping when we hit a non-numeric, non-# line.
+    """
+    keep: List[str] = []
+    in_block = False
+
+    for ln in stdout_text.splitlines():
+        s = ln.strip()
+        if not s:
+            # do not force-close blocks on blank lines; just skip
+            continue
+
+        if s.startswith("#"):
+            keep.append(ln)
+            in_block = (
+                s.startswith(
+                    "# kind=",
+                )
+                or s.startswith("# vp_table")
+                or in_block
+            )
+            continue
+
+        if in_block and _NUMERIC_ROW_RE.match(ln):
+            keep.append(ln)
+            continue
+
+        # Any other non-comment, non-numeric line breaks a block context
+        in_block = False
+
+    return "\n".join(keep)
+
+
+# ---------------------------------------------------------------------
 # Prompt-driven runner
 # ---------------------------------------------------------------------
 
 
 class ScaleFreeRunner:
     """
-    Runs the ScaleFree Fortran executable and
-    parses its structured output file.
+    Runs the ScaleFree Fortran executable and parses structured output.
+
+    Defaults to "no persistent files":
+    - if output_path is None, we still answer the Fortran
+    "Output file" prompt with a
+      temporary filename, but we delete it after the run and
+      return output_path=None.
     """
 
     def __init__(
@@ -467,19 +531,30 @@ class ScaleFreeRunner:
         average: bool = False,
         usevp: bool = False,
         verbose_vp: int = 0,
-        output_path: Optional[Union[str, Path]] = "out.txt",
+        output_path: Optional[Union[str, Path]] = None,
         timeout_s: int = 120,
         parse_stdout_fallback: bool = False,
+        # legacy flag; kept for compatibility
         debug_prompts: bool = False,
     ) -> ScaleFreeResult:
-        """
-        Drives the interactive Fortran executable via prompt matching.
-        """
         ipot = _potential_code(potential)
 
-        # Keep output filename short to avoid Fortran CHARACTER truncation
+        # ---------------------------------------------------------
+        # Output handling
+        # ---------------------------------------------------------
+        persist_file = output_path is not None
+        delete_after = False
+
         if output_path is None:
-            outname = "out.txt"
+            # Create a temp filename to satisfy Fortran prompt,
+            # but delete afterwards.
+            outname = (
+                "scalefree_"
+                + "tmp_"
+                + f"{os.getpid()}_{id(self) % 10_000_000}"
+                + ".txt"
+            )
+            delete_after = True
         else:
             outname = str(output_path)
             outname = (
@@ -492,7 +567,10 @@ class ScaleFreeRunner:
 
         out_path = self.workdir / outname
 
-        answers = {
+        # ---------------------------------------------------------
+        # Prompt answers
+        # ---------------------------------------------------------
+        answers: Dict[str, str] = {
             "Kepler (1) or Logarithmic (2)": str(ipot),
             "Power-law slope gamma": _fmt(gamma),
             "Intrinsic axial ratio q": _fmt(q),
@@ -509,9 +587,11 @@ class ScaleFreeRunner:
             "Choose 1 for default.": str(int(algorithm)),
             "Give the maximum number of projected moments": str(int(maxmom)),
             "Give the number of projected moments": str(int(maxmom)),
+            # Always answer output file prompt to avoid blocking.
             "Output file": outname,
         }
 
+        # Choose iwhat values based on average flag
         if average:
             iwhat_intr = 2
             iwhat_proj = 3
@@ -526,24 +606,29 @@ class ScaleFreeRunner:
                 if key in line:
                     return val
 
+            # iwhat prompt
             if "Calculate intrinsic (0) or projected (1)" in line:
                 return (
-                    str(
-                        iwhat_intr,
-                    )
+                    str(iwhat_intr)
                     if phase["step"] == 0
-                    else str(iwhat_proj)
+                    else str(
+                        iwhat_proj,
+                    )
                 )
 
+            # theta prompt (intrinsic)
             if "Give angle theta in the meridional plane" in line:
                 return _fmt(theta)
 
+            # xi prompt (projected)
             if "Give angle on the projected plane" in line:
                 return _fmt(xi)
 
+            # verbose prompt (only for projected modes)
             if "Give verbose output of intermediate steps" in line:
                 return str(int(verbose_vp))
 
+            # VP prompt variants
             if (
                 ("Calculate VPs" in line)
                 or ("Use VPs" in line)
@@ -551,6 +636,7 @@ class ScaleFreeRunner:
             ):
                 return "1" if usevp else "0"
 
+            # continue? ("Calculate something else for this model?")
             if "Calculate something else for this model" in line:
                 if phase["step"] == 0:
                     phase["step"] = 1
@@ -559,6 +645,9 @@ class ScaleFreeRunner:
 
             return None
 
+        # ---------------------------------------------------------
+        # Run Fortran interactively
+        # ---------------------------------------------------------
         p = subprocess.Popen(
             [str(self.exe_path)],
             cwd=str(self.workdir),
@@ -594,51 +683,91 @@ class ScaleFreeRunner:
 
         stdout_text = "".join(stdout_lines)
 
-        if rc != 0 or "STOP Wrong answer" in stderr_text:
+        try:
+            if rc != 0 or "STOP Wrong answer" in stderr_text:
+                raise RuntimeError(
+                    "Fortran execution failed.\n\n"
+                    f"Return code: {rc}\n"
+                    f"STDERR:\n{stderr_text}\n\n"
+                    f"STDOUT (first 2000 chars):\n{stdout_text[:2000]}\n"
+                )
+
+            # ---------------------------------------------------------
+            # Parse output: stable preference depends on whether
+            # caller requested a file
+            # ---------------------------------------------------------
+
+            # (A) If caller explicitly requested a file,
+            # prefer parsing that file
+            if persist_file and out_path.exists():
+                raw = out_path.read_text(encoding="utf-8", errors="replace")
+                blocks = parse_scalefree_output(raw)
+                return ScaleFreeResult(
+                    blocks=blocks,
+                    raw_text=raw,
+                    output_path=out_path,
+                    stdout=stdout_text,
+                    stderr=stderr_text,
+                )
+
+            # (B) Otherwise, prefer structured blocks from stdout (Option A)
+            raw_stdout_struct = _extract_structured_from_stdout(stdout_text)
+            if raw_stdout_struct.strip():
+                blocks = parse_scalefree_output(raw_stdout_struct)
+                if blocks:
+                    return ScaleFreeResult(
+                        blocks=blocks,
+                        raw_text=raw_stdout_struct,
+                        output_path=(
+                            None
+                            if delete_after
+                            else (out_path if persist_file else None)
+                        ),
+                        stdout=stdout_text,
+                        stderr=stderr_text,
+                    )
+
+            # (C) Fallback: if a file exists (temp or explicit), parse it
+            if out_path.exists():
+                raw = out_path.read_text(encoding="utf-8", errors="replace")
+                blocks = parse_scalefree_output(raw)
+                return ScaleFreeResult(
+                    blocks=blocks,
+                    raw_text=raw,
+                    output_path=out_path if persist_file else None,
+                    stdout=stdout_text,
+                    stderr=stderr_text,
+                )
+
+            # (D) Legacy fallback flag (kept, but typically redundant now)
+            if parse_stdout_fallback:
+                blocks = parse_scalefree_output(raw_stdout_struct)
+                return ScaleFreeResult(
+                    blocks=blocks,
+                    raw_text=raw_stdout_struct,
+                    output_path=None,
+                    stdout=stdout_text,
+                    stderr=stderr_text,
+                )
+
             raise RuntimeError(
-                "Fortran execution failed.\n\n"
-                f"Return code: {rc}\n"
-                f"STDERR:\n{stderr_text}\n\n"
+                "Fortran returned success but no structured"
+                "output was detected.\n"
+                "Expected either structured '# kind=...' "
+                "blocks in STDOUT or an output file.\n"
                 f"STDOUT (first 2000 chars):\n{stdout_text[:2000]}\n"
             )
 
-        if out_path.exists():
-            raw = out_path.read_text(encoding="utf-8", errors="replace")
-            blocks = parse_scalefree_output(raw)
-            return ScaleFreeResult(
-                blocks=blocks,
-                raw_text=raw,
-                output_path=out_path,
-                stdout=stdout_text,
-                stderr=stderr_text,
-            )
-
-        if parse_stdout_fallback:
-            structured = "\n".join(
-                [
-                    ln
-                    for ln in stdout_text.splitlines()
-                    if ln.strip().startswith("#")
-                    or re.match(r"^\s*[0-9\.\-\+EeDd]+\s+", ln)
-                ]
-            )
-            raw = structured
-            blocks = parse_scalefree_output(raw)
-            return ScaleFreeResult(
-                blocks=blocks,
-                raw_text=raw,
-                output_path=None,
-                stdout=stdout_text,
-                stderr=stderr_text,
-            )
-
-        raise RuntimeError(
-            "Fortran returned success but output file was not found.\n"
-            f"Expected: {out_path}\n"
-            "If the Fortran code does not prompt for an output filename\n"
-            "(or writes elsewhere), update the prompt match key in \n"
-            "answers['Output file'] or enable parse_stdout_fallback=True."
-        )
+        finally:
+            # Clean up temporary file if we created it
+            # purely to satisfy Fortran prompts
+            if delete_after:
+                try:
+                    if out_path.exists():
+                        out_path.unlink()
+                except Exception:
+                    # Non-fatal cleanup failure
+                    pass
 
 
 # ---------------------------------------------------------------------
@@ -666,7 +795,7 @@ def vprofile(
     average: bool = False,
     usevp: bool = False,
     verbose_vp: int = 0,
-    output_path: Optional[Union[str, Path]] = "out.txt",
+    output_path: Optional[Union[str, Path]] = None,
     timeout_s: int = 120,
     parse_stdout_fallback: bool = False,
     debug_prompts: bool = False,
@@ -676,6 +805,11 @@ def vprofile(
     Convenience function that instantiates a runner and executes vprofile.
 
     Users can omit exe_path; the backend will be resolved/built automatically.
+
+    Output behavior:
+    - output_path=None (default): do not leave output files behind
+    - output_path="something.txt": write and keep that file
+    (useful for regression)
     """
     runner = ScaleFreeRunner(exe_path=exe_path, workdir=workdir)
     return runner.vprofile(
