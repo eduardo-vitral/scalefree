@@ -14,6 +14,7 @@ build/
 # Fortran builds
 fortran_src/*.o
 fortran_src/*.mod
+fortran_src/*.e
 fortran_src/scalefree.e
 scalefree.e
 
