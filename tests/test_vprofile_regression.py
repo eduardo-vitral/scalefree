@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-from pathlib import Path
+# from pathlib import Path
 import numpy as np
 
-import scalefree
 from scalefree.vmoments import parse_scalefree_output
 
 
-def _run_case(exe_path: Path, *, average: bool, workdir: Path):
+def _run_case(*, runner, average: bool):
     """
-    Run the fixed regression case.
+    Run the fixed regression case using the provided runner fixture.
 
-    - workdir is passed to ScaleFreeRunner(...), not runner.vprofile(...)
-    - output_path=None => file-free behavior (parse structured stdout)
+    NOTE:
+    - Do not pass workdir here; workdir belongs to ScaleFreeRunner(...)
+      construction (handled by fixture).
+    - output_path=None => file-free behavior (stdout parsing)
+    under the new strategy.
     """
-    runner = scalefree.ScaleFreeRunner(exe_path=exe_path, workdir=workdir)
-
     return runner.vprofile(
         potential="logarithmic",
         gamma=2.0,
@@ -82,8 +82,8 @@ def _compare_outputs(new_blocks, ref_blocks):
             _assert_block_close(new_blocks["vp_table"][iproj], ref_tbl)
 
 
-def test_vprofile_point_regression(scalefree_exe, ref_dir, tmp_path):
-    res = _run_case(scalefree_exe, average=False, workdir=tmp_path)
+def test_vprofile_point_regression(runner, ref_dir, tmp_path):
+    res = _run_case(runner=runner, average=False)
     new_blocks = res.blocks
 
     ref_path = ref_dir / "out_point_ref.txt"
@@ -95,8 +95,8 @@ def test_vprofile_point_regression(scalefree_exe, ref_dir, tmp_path):
     _compare_outputs(new_blocks, ref_blocks)
 
 
-def test_vprofile_average_regression(scalefree_exe, ref_dir, tmp_path):
-    res = _run_case(scalefree_exe, average=True, workdir=tmp_path)
+def test_vprofile_average_regression(runner, ref_dir, tmp_path):
+    res = _run_case(runner=runner, average=True)
     new_blocks = res.blocks
 
     ref_path = ref_dir / "out_avg_ref.txt"
