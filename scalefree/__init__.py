@@ -8,5 +8,12 @@ except PackageNotFoundError:
     __version__ = "0.0.0"
 
 from .vmoments import vprofile, ScaleFreeRunner, ScaleFreeResult
+from .mock import mock
 
-__all__ = ["vprofile", "ScaleFreeRunner", "ScaleFreeResult", "__version__"]
+__all__ = [
+    "vprofile",
+    "ScaleFreeRunner",
+    "ScaleFreeResult",
+    "mock",
+    "__version__",
+]
