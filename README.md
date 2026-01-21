@@ -8,8 +8,7 @@
 
 
 <!-- markdownlint-disable-next-line no-inline-html -->
-<img alt="logo" align="right" src="https://gitlab.com/eduardo-vitral/
-scalefree/-/raw/main/images/scalefree_logo.png" width="20%" />
+<img alt="logo" align="right" src="https://gitlab.com/eduardo-vitral/scalefree/-/raw/main/images/scalefree_logo.png" width="20%" />
 
 
 Scale-free dynamical models (Fortran backend) with a small Python interface for computing intrinsic/projected velocity moments and (optionally) reconstructed velocity profiles (VPs) and Gauss–Hermite summaries.
