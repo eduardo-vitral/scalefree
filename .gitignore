@@ -15,8 +15,6 @@ build/
 fortran_src/*.o
 fortran_src/*.mod
 fortran_src/*.e
-fortran_src/scalefree.e
-scalefree.e
 
 # test outputs
 out_*.txt

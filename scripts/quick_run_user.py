@@ -68,7 +68,7 @@ def run_case(runner: ScaleFreeRunner, *, average: bool, outname: str):
         theta=0.0,
         integration=1,  # Gauss-Legendre
         ngl_or_eps=0,  # 0 => Fortran default
-        algorithm=1,  # default algorithm
+        algorithm=3,  # default algorithm
         maxmom=4,
         average=average,
         usevp=True,

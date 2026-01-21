@@ -351,9 +351,33 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
     blocks: Dict[str, Any] = {}
     i = 0
 
+    # The modified Fortran sometimes emits multi-line column headers.
+    # Example (vp block):
+    #   # columns: iproj true_gam true_V true_sig
+    #   #          gauss_gam gauss_V gauss_sig
+    #   #         h0 h1 h2 h3 h4 h5 h6
+    #
+    # The upstream file may only parse the first line. We extend it to
+    # consume continuation lines that contain additional identifier tokens.
+    _COLNAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
     def parse_columns(ln: str) -> List[str]:
         _, rhs = ln.split(":", 1)
         return rhs.strip().split()
+
+    def parse_columns_continuation(ln: str) -> List[str]:
+        s = ln.strip()
+        if not s.startswith("#"):
+            return []
+        # Strip leading '#', keep the remainder.
+        tail = s[1:].strip()
+        # If it looks like a new header or marker, do not treat as continuation.
+        if (not tail) or (":" in tail) or tail.startswith("kind=") or tail.startswith("vp_table"):
+            return []
+        toks = tail.split()
+        if toks and all(_COLNAME_RE.match(t) for t in toks):
+            return toks
+        return []
 
     while i < len(lines):
         s = lines[i].strip()
@@ -370,6 +394,8 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
             while i < len(lines) and lines[i].strip().startswith("#"):
                 if lines[i].strip().startswith("# columns:"):
                     cols = parse_columns(lines[i].strip())
+                elif cols is not None:
+                    cols += parse_columns_continuation(lines[i])
                 i += 1
 
             data = []
@@ -393,7 +419,102 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
         while i < len(lines) and lines[i].strip().startswith("#"):
             if lines[i].strip().startswith("# columns:"):
                 cols = parse_columns(lines[i].strip())
+            elif cols is not None:
+                cols += parse_columns_continuation(lines[i])
             i += 1
+
+        # Special handling for the VP summary block: the modified Fortran output
+        # interleaves additional VP summary rows with vp_table sub-blocks.
+        # Only the first row is preceded by '# kind=vp'; subsequent rows (iproj=2,3,...)
+        # appear later as numeric lines with many columns (while vp_table rows have only 2).
+        if kind == "vp":
+            data = []
+            while i < len(lines):
+                row = lines[i].strip()
+
+                # End of vp block when a new '# kind=' begins (different kind)
+                if row.startswith("# kind=") and not row.startswith("# kind=vp"):
+                    break
+
+                # Skip blanks
+                if row == "":
+                    i += 1
+                    continue
+
+                # Parse embedded vp_table blocks
+                if row.startswith("# vp_table"):
+                    parts = row.split()
+                    iproj = int(parts[-1])
+                    i += 1
+                    tcols = None
+                    while i < len(lines) and lines[i].strip().startswith("#"):
+                        if lines[i].strip().startswith("# columns:"):
+                            tcols = parse_columns(lines[i].strip())
+                        elif tcols is not None:
+                            tcols += parse_columns_continuation(lines[i])
+                        i += 1
+
+                    tdata = []
+                    while i < len(lines):
+                        r2 = lines[i].strip()
+                        if r2 == "" or r2.startswith("#"):
+                            break
+                        tdata.append([_to_float(x) for x in r2.split()])
+                        i += 1
+
+                    blocks.setdefault("vp_table", {})[iproj] = {
+                        "columns": tcols if tcols else ["v", "vp"],
+                        "data": np.array(tdata, dtype=float),
+                    }
+                    continue
+
+                # Skip other comment lines
+                if row.startswith("#"):
+                    i += 1
+                    continue
+
+                toks = row.split()
+                # vp summary rows are wide (>2); vp_table rows are 2 columns and are
+                # handled above after their '# vp_table' marker.
+                if len(toks) > 2:
+                    data.append([_to_float(x) for x in toks])
+                i += 1
+
+            arr = (
+                np.array(data, dtype=float)
+                if data
+                else np.empty((0, 0), dtype=float)
+            )
+
+            # Defensive: ensure the header width matches the numeric table width.
+            if cols is None:
+                cols_norm: List[str] = []
+            else:
+                cols_norm = list(cols)
+
+            if arr.ndim == 2 and arr.size > 0:
+                n_data_cols = int(arr.shape[1])
+                if len(cols_norm) > n_data_cols:
+                    cols_norm = cols_norm[:n_data_cols]
+                elif len(cols_norm) < n_data_cols:
+                    cols_norm = cols_norm + [
+                        f"col{j+1}" for j in range(len(cols_norm), n_data_cols)
+                    ]
+
+            block: Dict[str, Any] = {"columns": cols_norm, "data": arr}
+
+            if cols_norm and cols_norm[0].lower() == "iproj" and arr.shape[0] > 0:
+                by_iproj: Dict[int, Dict[str, float]] = {}
+                for r in arr:
+                    ip = int(r[0])
+                    by_iproj[ip] = {
+                        cols_norm[j]: r[j]
+                        for j in range(min(len(cols_norm), len(r)))
+                    }
+                block["by_iproj"] = by_iproj
+
+            blocks[kind] = block
+            continue
 
         data = []
         while i < len(lines):
@@ -411,17 +532,35 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
                 dtype=float,
             )
         )
-        block: Dict[str, Any] = {"columns": cols if cols else [], "data": arr}
+
+        # Defensive: ensure the header width matches the numeric table width.
+        # The modified Fortran code has emitted different VP header variants
+        # across versions (e.g. with/without h6). We retain the parsed header
+        # tokens, but normalize to the actual data width so downstream code can
+        # safely align columns with values.
+        if cols is None:
+            cols_norm: List[str] = []
+        else:
+            cols_norm = list(cols)
+
+        if arr.ndim == 2 and arr.size > 0:
+            n_data_cols = int(arr.shape[1])
+            if len(cols_norm) > n_data_cols:
+                cols_norm = cols_norm[:n_data_cols]
+            elif len(cols_norm) < n_data_cols:
+                cols_norm = cols_norm + [f"col{j+1}" for j in range(len(cols_norm), n_data_cols)]
+
+        block: Dict[str, Any] = {"columns": cols_norm, "data": arr}
 
         # Convenience indexing for tables where first column is iproj
-        if cols and cols[0].lower() == "iproj" and arr.shape[0] > 0:
+        if cols_norm and cols_norm[0].lower() == "iproj" and arr.shape[0] > 0:
             by_iproj: Dict[int, Dict[str, float]] = {}
             for r in arr:
                 ip = int(r[0])
                 by_iproj[ip] = {
-                    cols[j]: r[j]
+                    cols_norm[j]: r[j]
                     for j in range(
-                        min(len(cols), len(r)),
+                        min(len(cols_norm), len(r)),
                     )
                 }
             block["by_iproj"] = by_iproj
@@ -527,6 +666,10 @@ class ScaleFreeRunner:
         # eps if Romberg; nGL if Gauss-Legendre (0 -> default)
         algorithm: int = 1,
         # VP algorithm (1 default)
+        vp_reg_param: float = 1.0,
+        # Only used when algorithm==2 (fixed regularization strength)
+        vp_smooth_eps: float = 0.0,
+        # Only used when algorithm==3 (VP smoothness factor; 0.0 => Fortran default)
         maxmom: int = 4,
         average: bool = False,
         usevp: bool = False,
@@ -570,6 +713,17 @@ class ScaleFreeRunner:
         # ---------------------------------------------------------
         # Prompt answers
         # ---------------------------------------------------------
+        # NOTE: Fortran asks extra questions when algorithm != 1.
+        # We keep the public API stable by providing sensible defaults
+        # that reproduce the interactive "default" behavior:
+        #  - algorithm==2: regularization parameter (>0), default 1.0
+        #  - algorithm==3: smoothness eps (0.0 yields default), default 0.0
+        _vp_reg_param = float(vp_reg_param) if int(algorithm) == 2 else 1.0
+        if _vp_reg_param <= 0.0:
+            # Fortran requires >0. Keep it minimally safe.
+            _vp_reg_param = 1.0
+        _vp_smooth_eps = float(vp_smooth_eps) if int(algorithm) == 3 else 0.0
+
         answers: Dict[str, str] = {
             "Kepler (1) or Logarithmic (2)": str(ipot),
             "Power-law slope gamma": _fmt(gamma),
@@ -585,6 +739,9 @@ class ScaleFreeRunner:
                 str(int(ngl_or_eps)) if float(ngl_or_eps).is_integer() else "0"
             ),
             "Choose 1 for default.": str(int(algorithm)),
+            # Extra prompts for VP algorithms:
+            "Give the regularization parameter": _fmt(_vp_reg_param),
+            "Give smoothness factor eps": _fmt(_vp_smooth_eps),
             "Give the maximum number of projected moments": str(int(maxmom)),
             "Give the number of projected moments": str(int(maxmom)),
             # Always answer output file prompt to avoid blocking.
@@ -701,6 +858,9 @@ class ScaleFreeRunner:
             # prefer parsing that file
             if persist_file and out_path.exists():
                 raw = out_path.read_text(encoding="utf-8", errors="replace")
+                if debug_prompts:
+                    print("\n--- Fortran structured output (from file) ---")
+                    print(raw, end="" if raw.endswith("\n") else "\n")
                 blocks = parse_scalefree_output(raw)
                 return ScaleFreeResult(
                     blocks=blocks,
@@ -713,6 +873,9 @@ class ScaleFreeRunner:
             # (B) Otherwise, prefer structured blocks from stdout (Option A)
             raw_stdout_struct = _extract_structured_from_stdout(stdout_text)
             if raw_stdout_struct.strip():
+                if debug_prompts:
+                    print("\n--- Fortran structured output (from stdout structured blocks) ---")
+                    print(raw_stdout_struct, end="" if raw_stdout_struct.endswith("\n") else "\n")
                 blocks = parse_scalefree_output(raw_stdout_struct)
                 if blocks:
                     return ScaleFreeResult(
@@ -730,6 +893,9 @@ class ScaleFreeRunner:
             # (C) Fallback: if a file exists (temp or explicit), parse it
             if out_path.exists():
                 raw = out_path.read_text(encoding="utf-8", errors="replace")
+                if debug_prompts:
+                    print("\n--- Fortran structured output (from file fallback) ---")
+                    print(raw, end="" if raw.endswith("\n") else "\n")
                 blocks = parse_scalefree_output(raw)
                 return ScaleFreeResult(
                     blocks=blocks,
@@ -741,6 +907,9 @@ class ScaleFreeRunner:
 
             # (D) Legacy fallback flag (kept, but typically redundant now)
             if parse_stdout_fallback:
+                if debug_prompts:
+                    print("\n--- Fortran structured output (from stdout structured blocks fallback) ---")
+                    print(raw_stdout_struct, end="" if raw_stdout_struct.endswith("\n") else "\n")
                 blocks = parse_scalefree_output(raw_stdout_struct)
                 return ScaleFreeResult(
                     blocks=blocks,
