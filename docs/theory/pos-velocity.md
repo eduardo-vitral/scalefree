@@ -1,6 +1,6 @@
 # PLANE OF SKY VELOCITY MOMENTS (POSr AND POSt)
 
-In the current section, we aim to extend their formalism to proper motions, 
+In the current section, we aim to extend the formalism to proper motions, 
 providing the corresponding equations in the POS. 
 For that, we first need to set the general geometric conventions adopted. 
 We suppose a flattened system originally represented in spherical coordinates 
