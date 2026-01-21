@@ -1,11 +1,25 @@
 # scalefree
 
+[![pipeline status](https://gitlab.com/eduardo-vitral/scalefree/badges/main/pipeline.svg)](https://gitlab.com/eduardo-vitral/scalefree/-/commits/main)
+[![coverage report](https://gitlab.com/eduardo-vitral/scalefree/badges/main/coverage.svg)](https://gitlab.com/eduardo-vitral/scalefree/-/commits/main)
+[![pypi](https://img.shields.io/pypi/v/scalefree.svg)](https://pypi.python.org/pypi/scalefree/)
+[![python](https://img.shields.io/pypi/pyversions/scalefree.svg)](https://pypi.python.org/pypi/scalefree)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+
+<!-- markdownlint-disable-next-line no-inline-html -->
+<img alt="logo" align="right" src="https://gitlab.com/eduardo-vitral/
+scalefree/-/raw/main/images/scalefree_logo.png" width="20%" />
+
+
 Scale-free dynamical models (Fortran backend) with a small Python interface for computing intrinsic/projected velocity moments and (optionally) reconstructed velocity profiles (VPs) and Gauss–Hermite summaries.
 
 The guiding principles are:
 - Keep the user-facing API small and predictable
 - Delegate heavy computation to a compiled backend
 - Provide structured, parseable outputs for reproducible workflows
+
+This code was developped in the context of the [HSTPROMO](https://www.stsci.edu/~marel/hstpromo.html) collaboration.
 
 ---
 
@@ -199,6 +213,6 @@ If you use this code in research, please cite the foundational scale-free modell
         &emsp; implementation of plane-of-sky routines\
         &emsp; testing and application of code\
     address   : Royal Observatory of Edinburgh\
-                Edinburgh, UK
+                Edinburgh, UK\
                 e-mail   : eduardo.vitral@roe.ac.uk\
                 homepage : https://eduardo-vitral.github.io

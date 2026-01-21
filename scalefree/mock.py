@@ -130,23 +130,25 @@ def _sample_positions_scalefree(
 # Geometry helpers: rotation to/from "sky frame" for a given inclination
 # -----------------------------------------------------------------------------
 
-
 def _rotate_to_sky_xyz(
     x: np.ndarray, y: np.ndarray, z: np.ndarray, inclination_deg: float
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Rotate around x-axis by inclination i:
-      x' = x
-      y' = y cos i - z sin i
-      z' = y sin i + z cos i
-    Here z' is LOS axis, (x', y') is sky plane.
+    Evans & de Zeeuw (1994) convention as in VPOS.md / scalefree.f:
+
+      x' = y
+      y' = -x cos i + z sin i
+      z' =  x sin i + z cos i
+
+    z' is LOS; (x', y') is sky plane.
     """
     i = np.deg2rad(float(inclination_deg))
     ci = np.cos(i)
     si = np.sin(i)
-    xp = x
-    yp = y * ci - z * si
-    zp = y * si + z * ci
+
+    xp = y
+    yp = -x * ci + z * si
+    zp =  x * si + z * ci
     return xp, yp, zp
 
 
@@ -154,18 +156,21 @@ def _rotate_from_sky_v(
     vx_sky: np.ndarray, vy_sky: np.ndarray, vz_sky: np.ndarray, inclination_deg: float
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Inverse rotation (transpose) back to model frame:
-      vx = vx'
-      vy = vy' cos i + vz' sin i
-      vz = -vy' sin i + vz' cos i
+    Inverse mapping back to model frame, consistent with the above:
+
+      vy = vx'
+      vx = -vy' cos i + vz' sin i
+      vz =  vy' sin i + vz' cos i
     """
     i = np.deg2rad(float(inclination_deg))
     ci = np.cos(i)
     si = np.sin(i)
-    vx = vx_sky
-    vy = vy_sky * ci + vz_sky * si
-    vz = -vy_sky * si + vz_sky * ci
+
+    vy = vx_sky
+    vx = -vy_sky * ci + vz_sky * si
+    vz =  vy_sky * si + vz_sky * ci
     return vx, vy, vz
+
 
 
 # -----------------------------------------------------------------------------
