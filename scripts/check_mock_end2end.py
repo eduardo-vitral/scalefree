@@ -255,7 +255,7 @@ def main() -> None:
     )
     p.add_argument("--n_dens", type=int, default=8000)
     p.add_argument("--n_vel", type=int, default=8000)
-    p.add_argument("--nbins", type=int, default=36)
+    p.add_argument("--nbins", type=int, default=30)
     p.add_argument("--hist_bins", type=int, default=80)
     p.add_argument("--outdir", type=str, default="mock_check_outputs")
     p.add_argument("--seed", type=int, default=42)

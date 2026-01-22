@@ -12,22 +12,21 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(scope="session")
-def scalefree_exe() -> Path:
+def scalefree_exe(tmp_path_factory) -> Path:
     """
     Provide the path to the ScaleFree Fortran executable.
 
     Behaviour:
       - If fortran_src/scalefree.e exists -> use it.
-      - Else, if gfortran is available,
-      compile fortran_src/scalefree.f into scalefree.e.
+      - Else, if gfortran is available, compile scalefree.f into a session tmp dir.
       - Else, skip tests that depend on the executable.
     """
     root = repo_root()
-    exe = root / "fortran_src" / "scalefree.e"
+    prebuilt = root / "fortran_src" / "scalefree.e"
     src = root / "fortran_src" / "scalefree.f"
 
-    if exe.exists():
-        return exe
+    if prebuilt.exists():
+        return prebuilt
 
     if not src.exists():
         pytest.skip(f"Missing Fortran source at {src}")
@@ -39,6 +38,9 @@ def scalefree_exe() -> Path:
             "Install gfortran (e.g. apt-get install gfortran) "
             "or commit a prebuilt fortran_src/scalefree.e."
         )
+
+    build_dir = tmp_path_factory.mktemp("scalefree_build")
+    exe = build_dir / "scalefree.e"
 
     cmd = [
         gfortran,
@@ -67,9 +69,7 @@ def scalefree_exe() -> Path:
         ) from e
 
     if not exe.exists():
-        raise RuntimeError(
-            f"Compilation reported success, but executable not found at {exe}"
-        )
+        raise RuntimeError(f"Compilation reported success, but executable not found at {exe}")
 
     return exe
 
@@ -78,14 +78,12 @@ def scalefree_exe() -> Path:
 def ref_dir() -> Path:
     """
     Directory holding golden reference outputs.
-    We do not auto-generate refs here; tests will skip if refs are missing and
-    tell you how to generate them using tests/make_vprofile_refs.py.
+
+    Used only when SCALEFREE_STRICT_TESTS=1.
     """
     d = repo_root() / "tests" / "data"
     if not d.exists():
-        pytest.skip(
-            "Missing tests/data directory. "
-            + "Create it and "
-            + "add reference outputs."
-        )
+        # Do not skip: strict-mode tests will skip per-file if missing.
+        # Keep fixture available.
+        return d
     return d

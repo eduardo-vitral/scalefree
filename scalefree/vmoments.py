@@ -620,6 +620,84 @@ def _extract_structured_from_stdout(stdout_text: str) -> str:
 
 
 # ---------------------------------------------------------------------
+# Intrinsic moments extraction (text-only in current Fortran)
+# ---------------------------------------------------------------------
+
+_INTRINSIC_SHELL_MARK = "Mass-weighted average spherical shell"
+_INTRINSIC_HDR_RE = re.compile(r"\brho\b.*<v_ph>.*<v_r\^2>.*<v_th\^2>.*<v_ph\^2>", re.IGNORECASE)
+_FLOAT_RE = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][+-]?\d+)?|[+-]?(?:\d+(?:\.\d*)?|\.\d+)[+-]\d{2,4}")
+
+
+def _extract_last_intrinsic_block_from_stdout(stdout_text: str) -> str:
+    """
+    ScaleFree's intrinsic results are printed as human-readable text (WRITE(*))
+    rather than '# kind=...' blocks. This helper parses the *last* intrinsic
+    moment table in STDOUT and re-encodes it as a synthetic structured block
+    so downstream parsing remains uniform.
+
+    Returns an empty string if no intrinsic table is detected.
+    """
+    lines = stdout_text.splitlines()
+    # We scan for the last occurrence of an intrinsic table header, then parse
+    # the numeric row that follows.
+    last_idx = None
+    shell_avg = False
+
+    for i, ln in enumerate(lines):
+        if "Intrinsic velocity moments" in ln:
+            # reset; we will decide shell_avg when we see the next marker
+            last_idx = i
+            shell_avg = False
+        if last_idx is not None and _INTRINSIC_SHELL_MARK in ln:
+            shell_avg = True
+
+    if last_idx is None:
+        return ""
+
+    # From last_idx onward, find the header line, then the numeric row.
+    hdr_i = None
+    for i in range(last_idx, len(lines)):
+        if _INTRINSIC_HDR_RE.search(lines[i]):
+            hdr_i = i
+            break
+    if hdr_i is None:
+        return ""
+
+    # Find first non-empty line after header that contains at least 5 floats.
+    data_i = None
+    for i in range(hdr_i + 1, min(hdr_i + 6, len(lines))):
+        s = lines[i].strip()
+        if not s:
+            continue
+        toks = _FLOAT_RE.findall(s.replace("D", "E").replace("d", "e"))
+        if len(toks) >= 5:
+            data_i = i
+            break
+    if data_i is None:
+        return ""
+
+    toks = _FLOAT_RE.findall(lines[data_i].replace("D", "E").replace("d", "e"))
+    vals = [_to_float(t) for t in toks]
+
+    if shell_avg:
+        # Expected: rho, <v_ph>, <v_r^2>, <v_th^2>, <v_ph^2>, beta
+        if len(vals) < 6:
+            return ""
+        cols = ["rho", "vphi", "vr2", "vth2", "vphi2", "beta"]
+        kind = "intrinsic_shell_average"
+        vals = vals[:6]
+    else:
+        # Expected: rho, <v_ph>, <v_r^2>, <v_th^2>, <v_ph^2>
+        cols = ["rho", "vphi", "vr2", "vth2", "vphi2"]
+        kind = "intrinsic_point"
+        vals = vals[:5]
+
+    # Synthetic structured block understood by parse_scalefree_output()
+    out = [f"# kind={kind}", "# columns: " + " ".join(cols), "  " + "  ".join(_fmt(v) for v in vals)]
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------
 # Prompt-driven runner
 # ---------------------------------------------------------------------
 
@@ -672,6 +750,7 @@ class ScaleFreeRunner:
         # Only used when algorithm==3 (VP smoothness factor; 0.0 => Fortran default)
         maxmom: int = 4,
         average: bool = False,
+        kinematics: Union[str, int] = "projected",
         usevp: bool = False,
         verbose_vp: int = 0,
         output_path: Optional[Union[str, Path]] = None,
@@ -748,7 +827,33 @@ class ScaleFreeRunner:
             "Output file": outname,
         }
 
-        # Choose iwhat values based on average flag
+        # Choose iwhat values based on average flag and requested kinematics
+        def _norm_kinematics(k: Union[str, int]) -> Tuple[str, Optional[int]]:
+            """
+            Returns (mode, iwhat_single)
+              - mode == "single": run exactly one calculation with iwhat_single in {0,1,2,3}
+              - mode == "both"  : run intrinsic then projected (legacy behavior)
+            """
+            if isinstance(k, (int, np.integer)):
+                iw = int(k)
+                if iw not in (0, 1, 2, 3):
+                    raise ValueError("kinematics int must be one of {0,1,2,3}.")
+                return ("single", iw)
+
+            key = str(k).strip().lower()
+            if key in ("projected", "proj", "p"):
+                return ("single", 3 if average else 1)
+            if key in ("intrinsic", "intr", "i"):
+                return ("single", 2 if average else 0)
+            if key in ("both", "all"):
+                return ("both", None)
+
+            raise ValueError(
+                "kinematics must be 'projected', 'intrinsic', 'both', or an int in {0,1,2,3}."
+            )
+
+        mode, iwhat_single = _norm_kinematics(kinematics)
+
         if average:
             iwhat_intr = 2
             iwhat_proj = 3
@@ -756,7 +861,7 @@ class ScaleFreeRunner:
             iwhat_intr = 0
             iwhat_proj = 1
 
-        phase = {"step": 0}  # 0 intrinsic, 1 projected
+        phase = {"step": 0}  # 0 intrinsic, 1 projected (only when mode == "both")
 
         def respond(line: str) -> Optional[str]:
             for key, val in answers.items():
@@ -765,19 +870,16 @@ class ScaleFreeRunner:
 
             # iwhat prompt
             if "Calculate intrinsic (0) or projected (1)" in line:
-                return (
-                    str(iwhat_intr)
-                    if phase["step"] == 0
-                    else str(
-                        iwhat_proj,
-                    )
-                )
+                if mode == "both":
+                    return str(iwhat_intr) if phase["step"] == 0 else str(iwhat_proj)
+                assert iwhat_single is not None
+                return str(iwhat_single)
 
-            # theta prompt (intrinsic)
+            # theta prompt (intrinsic point only)
             if "Give angle theta in the meridional plane" in line:
                 return _fmt(theta)
 
-            # xi prompt (projected)
+            # xi prompt (projected only)
             if "Give angle on the projected plane" in line:
                 return _fmt(xi)
 
@@ -795,14 +897,13 @@ class ScaleFreeRunner:
 
             # continue? ("Calculate something else for this model?")
             if "Calculate something else for this model" in line:
-                if phase["step"] == 0:
+                if mode == "both" and phase["step"] == 0:
                     phase["step"] = 1
                     return "1"
                 return "0"
 
             return None
-
-        # ---------------------------------------------------------
+# ---------------------------------------------------------
         # Run Fortran interactively
         # ---------------------------------------------------------
         p = subprocess.Popen(
@@ -849,6 +950,57 @@ class ScaleFreeRunner:
                     f"STDOUT (first 2000 chars):\n{stdout_text[:2000]}\n"
                 )
 
+            def _finalize_blocks(blocks_in: Dict[str, Any], raw_in: str) -> Tuple[Dict[str, Any], str]:
+                """
+                Post-process parsed blocks according to requested kinematics:
+                  - projected-only: keep projected blocks
+                  - intrinsic-only: return only intrinsic blocks parsed from STDOUT text tables
+                  - both: merge intrinsic blocks (from STDOUT) with projected blocks (from structured output)
+                """
+                want_intr = False
+                want_proj = False
+                if mode == "both":
+                    want_intr = True
+                    want_proj = True
+                else:
+                    assert iwhat_single is not None
+                    want_intr = iwhat_single in (0, 2)
+                    want_proj = iwhat_single in (1, 3)
+
+                blocks = dict(blocks_in) if blocks_in else {}
+                raw = raw_in or ""
+
+                intrinsic_raw = ""
+                if want_intr:
+                    intrinsic_raw = _extract_last_intrinsic_block_from_stdout(stdout_text)
+                    if intrinsic_raw.strip():
+                        iblocks = parse_scalefree_output(intrinsic_raw)
+                        # Should be exactly one kind, but we merge defensively
+                        for k, v in iblocks.items():
+                            blocks[k] = v
+                        # Preserve provenance in raw_text for debugging/regression tests
+                        if raw and not raw.endswith("\n"):
+                            raw += "\n"
+                        raw += intrinsic_raw
+
+                if not want_proj:
+                    # Intrinsic-only: strip projected outputs if present
+                    blocks = {k: v for k, v in blocks.items() if k.startswith("intrinsic")}
+                    raw = intrinsic_raw if intrinsic_raw.strip() else raw
+
+                if not want_intr:
+                    # Projected-only: strip intrinsic outputs if present
+                    blocks = {k: v for k, v in blocks.items() if not k.startswith("intrinsic")}
+
+                if not blocks:
+                    raise RuntimeError(
+                        "Fortran returned success but no parsable output was detected. "
+                        "If you requested intrinsic quantities, note that intrinsic tables "
+                        "are printed to STDOUT and must match the expected header format."
+                    )
+
+                return blocks, raw
+
             # ---------------------------------------------------------
             # Parse output: stable preference depends on whether
             # caller requested a file
@@ -862,6 +1014,7 @@ class ScaleFreeRunner:
                     print("\n--- Fortran structured output (from file) ---")
                     print(raw, end="" if raw.endswith("\n") else "\n")
                 blocks = parse_scalefree_output(raw)
+                blocks, raw = _finalize_blocks(blocks, raw)
                 return ScaleFreeResult(
                     blocks=blocks,
                     raw_text=raw,
@@ -877,6 +1030,7 @@ class ScaleFreeRunner:
                     print("\n--- Fortran structured output (from stdout structured blocks) ---")
                     print(raw_stdout_struct, end="" if raw_stdout_struct.endswith("\n") else "\n")
                 blocks = parse_scalefree_output(raw_stdout_struct)
+                blocks, raw_stdout_struct = _finalize_blocks(blocks, raw_stdout_struct)
                 if blocks:
                     return ScaleFreeResult(
                         blocks=blocks,
@@ -897,6 +1051,7 @@ class ScaleFreeRunner:
                     print("\n--- Fortran structured output (from file fallback) ---")
                     print(raw, end="" if raw.endswith("\n") else "\n")
                 blocks = parse_scalefree_output(raw)
+                blocks, raw = _finalize_blocks(blocks, raw)
                 return ScaleFreeResult(
                     blocks=blocks,
                     raw_text=raw,
@@ -911,6 +1066,7 @@ class ScaleFreeRunner:
                     print("\n--- Fortran structured output (from stdout structured blocks fallback) ---")
                     print(raw_stdout_struct, end="" if raw_stdout_struct.endswith("\n") else "\n")
                 blocks = parse_scalefree_output(raw_stdout_struct)
+                blocks, raw_stdout_struct = _finalize_blocks(blocks, raw_stdout_struct)
                 return ScaleFreeResult(
                     blocks=blocks,
                     raw_text=raw_stdout_struct,
@@ -962,6 +1118,7 @@ def vprofile(
     algorithm: int = 1,
     maxmom: int = 4,
     average: bool = False,
+    kinematics: Union[str, int] = "projected",
     usevp: bool = False,
     verbose_vp: int = 0,
     output_path: Optional[Union[str, Path]] = None,
@@ -997,6 +1154,7 @@ def vprofile(
         algorithm=algorithm,
         maxmom=maxmom,
         average=average,
+        kinematics=kinematics,
         usevp=usevp,
         verbose_vp=verbose_vp,
         output_path=output_path,
