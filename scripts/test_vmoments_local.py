@@ -1,42 +1,99 @@
+#!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import os
+import sys
 from pathlib import Path
 
-import numpy as np
-import pytest
 
-import scalefree
-from scalefree.vmoments import parse_scalefree_output
-
-
-STRICT = os.getenv("SCALEFREE_STRICT_TESTS", "0").strip() == "1"
-
-
-def _case_cfg(algorithm: int) -> dict:
+def _force_repo_import(repo_root: Path) -> None:
     """
-    Minimal algorithm-dependent settings.
-
-    Notes:
-      - alg=1: original behaviour (few moments)
-      - alg=2/3: more moments to avoid REGMAT2 issues in some regimes
+    Force Python to import 'scalefree' from the working tree (repo checkout),
+    not from a pip/conda installed distribution.
     """
-    if algorithm == 1:
-        return dict(maxmom=4)
-    if algorithm == 2:
-        return dict(maxmom=8, vp_reg_param=1.0)
-    if algorithm == 3:
-        return dict(maxmom=8, vp_smooth_eps=0.0)
-    raise ValueError(f"Unsupported algorithm={algorithm}")
+    repo_root = repo_root.resolve()
+    sys.path.insert(0, str(repo_root))
+
+    # If scalefree was already imported (very common in notebooks), drop it.
+    for k in list(sys.modules.keys()):
+        if k == "scalefree" or k.startswith("scalefree."):
+            del sys.modules[k]
 
 
-def _run_case(exe_path: Path, *, average: bool, workdir: Path, algorithm: int, kinematics: str):
-    runner = scalefree.ScaleFreeRunner(exe_path=exe_path, workdir=workdir)
+def potential_logarithmic() -> int:
+    return 2  # Fortran: Kepler (1) or Logarithmic (2)
 
-    cfg = _case_cfg(algorithm)
 
+def print_table(title: str, columns, data):
+    print(f"\n--- {title} ---")
+    if columns:
+        print("Columns:", " ".join(columns))
+    if data is None:
+        print("(no data)")
+        return
+    if getattr(data, "size", 0) == 0:
+        print("(empty)")
+        return
+    for row in data:
+        print(" ".join(f"{x:.16g}" for x in row))
+
+
+def print_results(tag: str, res):
+    print("\n==============================")
+    print(f"CASE: {tag}")
+    print(f"Output file: {res.output_path}")
+    print(f"Blocks found: {sorted(res.blocks.keys())}")
+    print("==============================")
+
+    if "_fortran" in res.blocks:
+        meta = res.blocks["_fortran"]
+        print("\n--- fortran meta ---")
+        print("parsed_from:", meta.get("parsed_from"))
+        print("exe_path:", meta.get("exe_path"))
+        # Print full captured stdout/stderr only if debug was enabled in vprofile
+        # (vprofile will already print them when debug_prompts=True)
+        if meta.get("stderr", "").strip():
+            print("\n--- fortran stderr (captured; non-empty) ---")
+            print(meta["stderr"])
+
+    if "projected_point" in res.blocks:
+        blk = res.blocks["projected_point"]
+        print_table("projected_point", blk.get("columns", []), blk.get("data"))
+
+    if "projected_circle_average" in res.blocks:
+        blk = res.blocks["projected_circle_average"]
+        print_table("projected_circle_average", blk.get("columns", []), blk.get("data"))
+
+    if "vp" in res.blocks:
+        blk = res.blocks["vp"]
+        print_table("vp summary", blk.get("columns", []), blk.get("data"))
+
+        # Hard check: header/data width match
+        data = blk.get("data")
+        cols = blk.get("columns", [])
+        if getattr(data, "ndim", 0) == 2 and data.size:
+            assert data.shape[1] == len(cols), (
+                f"VP header/data mismatch: {len(cols)} columns vs {data.shape[1]} data width.\n"
+                f"columns={cols}"
+            )
+    else:
+        print("\n(No 'vp' summary block found.)")
+
+    if "vp_table" in res.blocks:
+        vpt = res.blocks["vp_table"]
+        for iproj in sorted(vpt.keys()):
+            tbl = vpt[iproj]
+            print_table(
+                f"vp_table iproj={iproj}", tbl.get("columns", []), tbl.get("data")
+            )
+    else:
+        print("\n(No 'vp_table' blocks found.)")
+
+
+def run_case(runner, *, average: bool, debug: bool):
     return runner.vprofile(
-        potential="logarithmic",
+        potential=potential_logarithmic,
         gamma=2.0,
         q=0.608,
         df=1,
@@ -46,219 +103,68 @@ def _run_case(exe_path: Path, *, average: bool, workdir: Path, algorithm: int, k
         inclination=57.1,
         xi=0.0,
         theta=0.0,
-        integration=1,
-        ngl_or_eps=0,
-        algorithm=algorithm,
-        maxmom=cfg["maxmom"],
+        integration=1,  # Gauss-Legendre
+        ngl_or_eps=0,  # 0 => Fortran default (and avoids "eps" prompt paths)
+        algorithm=3,  # recommend 3 for physical VPs; change to 1 if you explicitly want it
+        maxmom=10,
         average=average,
-        kinematics=kinematics,   # <-- explicit: avoids ambiguity
-        usevp=(kinematics == "projected"),
-        verbose_vp=0,
+        usevp=True,
+        verbose_vp=1,
         output_path=None,
-        debug_prompts=False,
-        parse_stdout_fallback=False,
-        vp_reg_param=cfg.get("vp_reg_param", 1.0),
-        vp_smooth_eps=cfg.get("vp_smooth_eps", 0.0),
+        debug_prompts=True,
     )
 
 
-# -----------------------------
-# Smoke / contract assertions
-# -----------------------------
-
-def _assert_block_has_columns_and_data(block: dict, *, min_rows: int = 1, min_cols: int = 1):
-    assert isinstance(block, dict)
-    cols = block.get("columns", [])
-    data = block.get("data", None)
-
-    assert isinstance(cols, list) and len(cols) >= min_cols
-    assert data is not None
-
-    arr = np.asarray(data)
-    assert arr.ndim == 2
-    assert arr.shape[0] >= min_rows
-    assert arr.shape[1] >= min_cols
-
-
-def _assert_projected_contract(blocks: dict, *, average: bool):
-    kind = "projected_circle_average" if average else "projected_point"
-    assert kind in blocks, f"Missing '{kind}' block"
-
-    blk = blocks[kind]
-    _assert_block_has_columns_and_data(blk, min_rows=3, min_cols=6)
-
-    # Columns in Fortran structured output are expected to be:
-    # iproj rho_p v1 v2 v3 v4
-    expected = ["iproj", "rho_p", "v1", "v2", "v3", "v4"]
-    assert blk["columns"] == expected
-
-    arr = np.asarray(blk["data"], dtype=float)
-
-    # iproj should be 1..3
-    iproj = arr[:, 0].astype(int)
-    assert set(iproj.tolist()) == {1, 2, 3}
-
-    # rho_p should be positive
-    rho_p = arr[:, 1]
-    assert np.all(rho_p > 0)
-
-    # v2 (second moment) should be >= 0
-    v2 = arr[:, 3]
-    assert np.all(v2 >= 0)
-
-
-def _assert_vp_contract(blocks: dict):
-    # VP blocks only exist when projected mode & usevp=True
-    assert "vp" in blocks, "Missing 'vp' block (backend may have stopped mid-run)"
-    _assert_block_has_columns_and_data(blocks["vp"], min_rows=3, min_cols=7)
-
-    # vp_table should exist and have iproj 1..3 tables
-    assert "vp_table" in blocks, "Missing 'vp_table' block"
-    vpt = blocks["vp_table"]
-    assert isinstance(vpt, dict) and vpt, "vp_table is empty"
-
-    for ip in (1, 2, 3):
-        assert ip in vpt, f"vp_table missing iproj={ip}"
-        tbl = vpt[ip]
-        _assert_block_has_columns_and_data(tbl, min_rows=5, min_cols=2)
-        assert tbl["columns"] == ["v", "vp"]
-
-
-def _assert_intrinsic_contract(blocks: dict, *, average: bool):
-    kind = "intrinsic_shell_average" if average else "intrinsic_point"
-    assert kind in blocks, f"Missing '{kind}' block"
-
-    blk = blocks[kind]
-    if average:
-        assert blk["columns"] == ["rho", "vphi", "vr2", "vth2", "vphi2", "beta"]
-        _assert_block_has_columns_and_data(blk, min_rows=1, min_cols=6)
-    else:
-        assert blk["columns"] == ["rho", "vphi", "vr2", "vth2", "vphi2"]
-        _assert_block_has_columns_and_data(blk, min_rows=1, min_cols=5)
-
-    arr = np.asarray(blk["data"], dtype=float)
-    assert np.all(np.isfinite(arr[:, :5])), "Intrinsic moments contain NaN/Inf unexpectedly"
-    assert np.all(arr[:, 0] > 0), "Intrinsic rho must be positive"
-
-
-# -----------------------------
-# Optional strict regression
-# -----------------------------
-
-def _ref_path(ref_dir: Path, *, average: bool, algorithm: int) -> Path:
-    stem = "out_avg" if average else "out_point"
-    return ref_dir / f"{stem}_alg{algorithm}_ref.txt"
-
-
-def _skip_if_missing_ref(ref_path: Path):
-    if not ref_path.exists():
-        pytest.skip(
-            f"Missing reference file: {ref_path}\n"
-            "Generate/refresh refs by running:\n"
-            "  python tests/make_vprofile_refs.py\n"
-            "and commit tests/data/*_ref.txt."
-        )
-
-
-def _assert_block_close(new_blk, ref_blk, *, rtol=5e-5, atol=1e-7):
-    """
-    Relaxed tolerances to accommodate platform/compiler differences.
-    """
-    assert new_blk.get("columns", []) == ref_blk.get("columns", [])
-
-    new_data = np.asarray(new_blk.get("data"), dtype=float)
-    ref_data = np.asarray(ref_blk.get("data"), dtype=float)
-
-    assert new_data.shape == ref_data.shape
-
-    # Handle extremely tiny underflows and denormals consistently.
-    tiny = 1e-300
-    new_data = np.where(np.abs(new_data) < tiny, 0.0, new_data)
-    ref_data = np.where(np.abs(ref_data) < tiny, 0.0, ref_data)
-
-    assert np.allclose(new_data, ref_data, rtol=rtol, atol=atol, equal_nan=True)
-
-
-def _compare_outputs(new_blocks, ref_blocks):
-    # Only compare projected outputs (refs are projected)
-    must_have = []
-    if "projected_point" in ref_blocks:
-        must_have.append("projected_point")
-    if "projected_circle_average" in ref_blocks:
-        must_have.append("projected_circle_average")
-    if "vp" in ref_blocks:
-        must_have.append("vp")
-
-    for k in must_have:
-        assert k in new_blocks, f"Missing block '{k}' in new output"
-        _assert_block_close(new_blocks[k], ref_blocks[k])
-
-    if "vp_table" in ref_blocks:
-        assert "vp_table" in new_blocks
-        for iproj, ref_tbl in ref_blocks["vp_table"].items():
-            assert iproj in new_blocks["vp_table"]
-            _assert_block_close(new_blocks["vp_table"][iproj], ref_tbl)
-
-
-# -----------------------------
-# Tests
-# -----------------------------
-
-@pytest.mark.parametrize("algorithm", [1, 2, 3])
-def test_projected_point_smoke(scalefree_exe, tmp_path, algorithm, ref_dir):
-    res = _run_case(
-        scalefree_exe,
-        average=False,
-        workdir=tmp_path,
-        algorithm=algorithm,
-        kinematics="projected",
+def main():
+    p = argparse.ArgumentParser(
+        description="Local test of working-tree scalefree.vmoments parsing."
     )
-    blocks = res.blocks
-
-    _assert_projected_contract(blocks, average=False)
-    _assert_vp_contract(blocks)
-
-    if STRICT:
-        ref_path = _ref_path(ref_dir, average=False, algorithm=algorithm)
-        _skip_if_missing_ref(ref_path)
-        ref_blocks = parse_scalefree_output(ref_path.read_text(encoding="utf-8", errors="replace"))
-        _compare_outputs(blocks, ref_blocks)
-
-
-@pytest.mark.parametrize("algorithm", [1, 2, 3])
-def test_projected_average_smoke(scalefree_exe, tmp_path, algorithm, ref_dir):
-    res = _run_case(
-        scalefree_exe,
-        average=True,
-        workdir=tmp_path,
-        algorithm=algorithm,
-        kinematics="projected",
+    p.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug_prompts in vmoments and print full captured output.",
     )
-    blocks = res.blocks
+    args, _unknown = p.parse_known_args()  # IMPORTANT: ignore Jupyter/ipykernel flags
 
-    _assert_projected_contract(blocks, average=True)
-    _assert_vp_contract(blocks)
+    repo_root = Path(__file__).resolve().parents[1]
+    _force_repo_import(repo_root)
 
-    if STRICT:
-        ref_path = _ref_path(ref_dir, average=True, algorithm=algorithm)
-        _skip_if_missing_ref(ref_path)
-        ref_blocks = parse_scalefree_output(ref_path.read_text(encoding="utf-8", errors="replace"))
-        _compare_outputs(blocks, ref_blocks)
+    import scalefree  # noqa: E402
+    from scalefree import ScaleFreeRunner  # noqa: E402
+    from scalefree import mock
+
+    print("Imported scalefree from:", Path(scalefree.__file__).resolve())
+
+    runner = ScaleFreeRunner()
+
+    res_point = run_case(runner, average=False, debug=False)
+    print_results("average=False (point)", res_point)
+
+    # xyzv = mock(
+    #     potential=2,
+    #     gamma=2.0,
+    #     q=0.608,
+    #     df=1,
+    #     beta=0.189,
+    #     s=0.5,
+    #     t=0.0,
+    #     nsamples=10,
+    #     seed=101,  # use non-negative (or keep -101 if you applied the seed fix)
+    #     rin=1.0,
+    #     rout=10.0,
+    #     inclination=57.1,
+    #     xi=0.0,
+    #     algorithm=1,
+    #     nbins=6,  # key: few bins => few vprofile calls
+    #     nsig=6,  # smaller PDF grid support is fine for a smoke check
+    #     grid_n=801,  # smaller grid speeds up BALRoGO sampling
+    #     debug=True,  # prints bin occupancy summary
+    # )
+    # print(xyzv.shape)
+    # print(xyzv[:3])
+
+    print("\nFinished.")
 
 
-@pytest.mark.parametrize("average", [False, True])
-def test_intrinsic_smoke(scalefree_exe, tmp_path, average):
-    res = _run_case(
-        scalefree_exe,
-        average=average,
-        workdir=tmp_path,
-        algorithm=3,            # algorithm irrelevant for intrinsic moments; choose a stable default
-        kinematics="intrinsic",
-    )
-    blocks = res.blocks
-    _assert_intrinsic_contract(blocks, average=average)
-
-    # Ensure projected-only blocks are not leaking into intrinsic-only mode
-    assert not any(k.startswith("projected") for k in blocks.keys())
-    assert "vp" not in blocks
-    assert "vp_table" not in blocks
+if __name__ == "__main__":
+    main()

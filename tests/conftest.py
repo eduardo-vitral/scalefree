@@ -18,7 +18,8 @@ def scalefree_exe(tmp_path_factory) -> Path:
 
     Behaviour:
       - If fortran_src/scalefree.e exists -> use it.
-      - Else, if gfortran is available, compile scalefree.f into a session tmp dir.
+      - Else, if gfortran is available,
+      compile scalefree.f into a session tmp dir.
       - Else, skip tests that depend on the executable.
     """
     root = repo_root()
@@ -69,7 +70,9 @@ def scalefree_exe(tmp_path_factory) -> Path:
         ) from e
 
     if not exe.exists():
-        raise RuntimeError(f"Compilation reported success, but executable not found at {exe}")
+        raise RuntimeError(
+            f"Compilation reported success, but executable not found at {exe}",
+        )
 
     return exe
 
