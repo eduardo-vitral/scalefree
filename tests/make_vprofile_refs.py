@@ -1,223 +1,258 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""Generate and (optionally) update vprofile reference outputs.
+
+This script is meant to be run manually by maintainers before committing new
+reference files under ``tests/data``.
+
+Important: different Fortran compilers and platforms may format very small
+numbers differently (e.g. ``0.1416-319`` vs ``0``). For that reason, reference
+updates and comparisons are performed using *numerical* equality at roughly
+5 significant digits, rather than strict text equality.
+"""
+
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 import argparse
 import math
-from pathlib import Path
-import shutil
-import subprocess
+import re
+from typing import Iterable, Tuple
 
-import numpy as np
-
-import scalefree
+from scalefree.vmoments import ScaleFreeRunner
 
 
-def repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+# ------------------------------
+# Numeric comparison utilities
+# ------------------------------
 
 
-def build_exe(*, force: bool = False) -> Path:
-    """Build (or reuse) the Fortran executable.
+_NUM_RE = re.compile(
+    r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+-]?\d+)?$"
+)
+_FORTRAN_NOE_RE = re.compile(
+    r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+))([+-]\d+)$"
+)
 
-    By default we rebuild if:
-      - executable is missing, OR
-      - source is newer than executable.
 
-    Use --force-rebuild to always rebuild.
+def _parse_float_token(tok: str) -> float | None:
+    """Parse a token that may be a Fortran/Python float.
+
+    Supports:
+      - standard E/e exponents (1.0e-3)
+      - Fortran D exponent (1.0D-3)
+      - Fortran output without 'E' (0.1416-319 meaning 0.1416e-319)
     """
-    root = repo_root()
-    exe = root / "fortran_src" / "scalefree.e"
-    src = root / "fortran_src" / "scalefree.f"
-
-    if not src.exists():
-        raise FileNotFoundError(f"Missing Fortran source at {src}")
-
-    if exe.exists() and not force:
+    t = tok.strip()
+    if not t:
+        return None
+    if _NUM_RE.match(t):
         try:
-            if exe.stat().st_mtime >= src.stat().st_mtime:
-                return exe
-        except OSError:
-            pass
-
-    gfortran = shutil.which("gfortran")
-    if not gfortran:
-        raise RuntimeError(
-            "gfortran not found. Install it, then re-run:\n"
-            "  python tests/make_vprofile_refs.py"
-        )
-
-    cmd = [
-        gfortran,
-        "-O2",
-        "-std=legacy",
-        "-ffixed-line-length-none",
-        "-o",
-        str(exe),
-        str(src),
-    ]
-    subprocess.run(cmd, cwd=str(src.parent), check=True)
-    return exe
-
-
-def case_cfg(algorithm: int) -> dict:
-    # Keep aligned with tests.
-    if algorithm == 1:
-        return dict(maxmom=4)
-    if algorithm == 2:
-        return dict(maxmom=8, vp_reg_param=1.0)
-    if algorithm == 3:
-        return dict(maxmom=8, vp_smooth_eps=0.0)
-    raise ValueError(f"Unsupported algorithm={algorithm}")
-
-
-def ref_name(*, kinematics: str, average: bool, algorithm: int) -> str:
-    stem = "avg" if average else "point"
-    return f"{kinematics}_{stem}_alg{algorithm}_ref.txt"
-
-
-def _extract_numeric_tokens(text: str) -> np.ndarray:
-    nums: list[float] = []
-    for tok in text.replace(",", " ").split():
-        try:
-            nums.append(float(tok))
+            return float(t.replace("D", "E").replace("d", "e"))
         except ValueError:
-            continue
-    return np.asarray(nums, dtype=float)
+            return None
+    m = _FORTRAN_NOE_RE.match(t)
+    if m:
+        base, exp = m.group(1), m.group(2)
+        try:
+            return float(f"{base}e{exp}")
+        except ValueError:
+            return None
+    return None
 
 
-def _round_sig(x: float, sig: int = 5) -> float:
-    if math.isnan(x) or math.isinf(x) or x == 0.0:
-        return x
-    return round(x, sig - int(math.floor(math.log10(abs(x)))) - 1)
+@dataclass(frozen=True)
+class SigSpec:
+    sig: int = 5
+    tiny: float = 1e-300
+    factor: float = 2.0  # tolerance multiplier (helps cross-platform)
 
 
-def _compare_texts(ref_text: str, new_text: str, sig: int = 5) -> tuple[bool, str]:
-    a = _extract_numeric_tokens(ref_text)
-    b = _extract_numeric_tokens(new_text)
+def _sig_ulp_tol(x: float, sig: int, factor: float) -> float:
+    """Half-ULP at the given significant digits (scaled by factor)."""
+    ax = abs(x)
+    if ax == 0.0:
+        return 0.0
+    exp10 = math.floor(math.log10(ax))
+    # one unit in the last place for `sig` significant digits
+    ulp = 10.0 ** (exp10 - sig + 1)
+    return factor * 0.5 * ulp
 
-    if a.shape != b.shape:
-        return False, f"shape mismatch: ref has {a.size} nums, new has {b.size} nums"
 
-    for i, (ra, rb) in enumerate(zip(a, b)):
-        if math.isnan(ra) and math.isnan(rb):
-            continue
-        if math.isinf(ra) and math.isinf(rb) and (ra > 0) == (rb > 0):
-            continue
-        if _round_sig(float(ra), sig) != _round_sig(float(rb), sig):
-            return False, f"diff at index {i}: ref={ra} new={rb} (sig={sig})"
+def _close_sig(a: float, b: float, spec: SigSpec) -> bool:
+    # Treat ultra-small values as zero for stability.
+    if max(abs(a), abs(b)) < spec.tiny:
+        return True
+    # If one side is tiny, still compare against the other side's scale.
+    scale = max(abs(a), abs(b))
+    tol = _sig_ulp_tol(scale, spec.sig, spec.factor)
+    return abs(a - b) <= max(tol, spec.tiny)
 
-    return True, "match"
+
+def _tokenise_lines(text: str) -> list[list[str]]:
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    # strip trailing whitespace; keep internal spacing irrelevant
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return [line.rstrip().split() for line in lines]
+
+
+def texts_equivalent(ref_text: str, got_text: str, spec: SigSpec) -> Tuple[bool, str]:
+    """Return (ok, message) comparing two outputs at ~sig digits."""
+    ref_lines = _tokenise_lines(ref_text)
+    got_lines = _tokenise_lines(got_text)
+    if len(ref_lines) != len(got_lines):
+        return False, f"line-count differs: expected {len(ref_lines)} got {len(got_lines)}"
+
+    for i, (rtoks, gtoks) in enumerate(zip(ref_lines, got_lines), start=1):
+        if len(rtoks) != len(gtoks):
+            return (
+                False,
+                f"token-count differs on line {i}: expected {len(rtoks)} got {len(gtoks)}",
+            )
+        for j, (r, g) in enumerate(zip(rtoks, gtoks), start=1):
+            rf = _parse_float_token(r)
+            gf = _parse_float_token(g)
+            if (rf is not None) and (gf is not None):
+                if not _close_sig(rf, gf, spec):
+                    return (
+                        False,
+                        f"numeric mismatch on line {i}, token {j}: expected {r} got {g}",
+                    )
+            else:
+                if r != g:
+                    return (
+                        False,
+                        f"text mismatch on line {i}, token {j}: expected {r!r} got {g!r}",
+                    )
+    return True, "ok"
+
+
+# ------------------------------
+# Reference generation
+# ------------------------------
+
+
+def _runner(exe: Path, workdir: Path) -> ScaleFreeRunner:
+    return ScaleFreeRunner(exe, workdir=workdir)
+
+
+def _common_kwargs(*, algorithm: int, kinematics: str) -> dict:
+    # These are deliberately conservative parameters, selected to be stable.
+    # Keep aligned with tests/test_vprofile_regression.py.
+    base: dict = {
+        # model
+        "potential": "logarithmic",
+        "gamma": 2.0,
+        "q": 0.608,
+        "beta": 0.189,
+        "s": 0.5,
+        "t": 0.0,
+        "inclination": 57.1,
+        "xi": 0.0,
+        "theta": 0.0,
+        "df": 1,
+        # run control
+        "algorithm": algorithm,
+        "kinematics": kinematics,
+        "integration": 1,
+        "ngl_or_eps": 0,
+        "debug_prompts": False,
+    }
+
+    if algorithm == 3:
+        # algorithm=3 supports vp-table mode; using fewer moments is both faster
+        # and tends to be more stable across compilers.
+        base.update(
+            {
+                "maxmom": 8,
+                "usevp": True,
+                "verbose_vp": 0,
+                "vp_smooth_eps": 0.0,
+                "vp_reg_param": 1.0,
+                "parse_stdout_fallback": False,
+            }
+        )
+    else:
+        base.update({"maxmom": 20})
+
+    return base
 
 
 def main() -> int:
-    p = argparse.ArgumentParser(
-        description=(
-            "Generate/update golden reference outputs under tests/data/.\n\n"
-            "Default behaviour is to compare the newly-generated outputs against the\n"
-            "existing *_ref.txt files up to 5 significant digits. Use --overwrite\n"
-            "to replace the reference files."
-        )
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--exe",
+        type=Path,
+        default=Path(__file__).resolve().parents[1] / "fortran_src" / "scalefree.e",
+        help="Path to scalefree Fortran executable (default: repo fortran_src/scalefree.e)",
     )
-    p.add_argument(
-        "--force-rebuild",
+    ap.add_argument(
+        "--sig",
+        type=int,
+        default=5,
+        help="Significant digits for comparison (default: 5)",
+    )
+    ap.add_argument(
+        "--update",
         action="store_true",
-        help="Always rebuild fortran_src/scalefree.e from fortran_src/scalefree.f.",
+        help="Overwrite reference files when they differ at the chosen precision.",
     )
-    p.add_argument(
-        "--include-both",
-        action="store_true",
-        help="Also generate references for kinematics='both' (optional).",
-    )
-    p.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing *_ref.txt files with newly-generated outputs.",
-    )
+    args = ap.parse_args()
 
-    args = p.parse_args()
-
-    exe = build_exe(force=args.force_rebuild)
-    root = repo_root()
-    data_dir = root / "tests" / "data"
+    root = Path(__file__).resolve().parent
+    data_dir = root / "data"
+    workdir = root / "_work"
     data_dir.mkdir(parents=True, exist_ok=True)
+    workdir.mkdir(parents=True, exist_ok=True)
 
-    runner = scalefree.ScaleFreeRunner(
-        exe_path=exe,
-        workdir=(root / "tests" / "_work"),
-    )
-    runner.workdir.mkdir(parents=True, exist_ok=True)
+    runner = _runner(args.exe, workdir)
+    spec = SigSpec(sig=args.sig)
 
-    kinematics_list = ["intrinsic", "projected"]
-    if args.include_both:
-        kinematics_list.append("both")
-
-    any_mismatch = False
-
+    changed = False
     for algorithm in (1, 2, 3):
-        cfg = case_cfg(algorithm)
-        for kinematics in kinematics_list:
+        for kinematics in ("intrinsic", "projected"):
             for average in (False, True):
-                res = runner.vprofile(
-                    potential="logarithmic",
-                    gamma=2.0,
-                    q=0.608,
-                    df=1,
-                    beta=0.189,
-                    s=0.5,
-                    t=0.0,
-                    inclination=57.1,
-                    xi=0.0,
-                    theta=0.0,
-                    integration=1,
-                    ngl_or_eps=0,
-                    algorithm=algorithm,
-                    maxmom=cfg["maxmom"],
-                    average=average,
-                    kinematics=kinematics,
-                    usevp=True,
-                    verbose_vp=0,
-                    # IMPORTANT: provide a short output filename.
-                    # Some Fortran builds use fixed-length CHARACTER buffers for
-                    # filenames; long autogenerated names may be truncated,
-                    # causing the Python side to look for the wrong path.
-                    output_path=runner.workdir / "vp.txt",
-                    debug_prompts=False,
-                    parse_stdout_fallback=False,
-                    vp_reg_param=cfg.get("vp_reg_param", 1.0),
-                    vp_smooth_eps=cfg.get("vp_smooth_eps", 0.0),
-                )
+                tag = "avg" if average else "point"
+                out_name = f"{kinematics}_{tag}_alg{algorithm}_ref.txt"
+                out_path = data_dir / out_name
 
-                pth = data_dir / ref_name(
-                    kinematics=kinematics,
-                    average=average,
-                    algorithm=algorithm,
-                )
+                kwargs = _common_kwargs(algorithm=algorithm, kinematics=kinematics)
+                # Keep output paths short (some Fortran builds truncate file names).
+                tmp_out = workdir / "vp.txt"
 
-                if pth.exists() and not args.overwrite:
-                    ok, msg = _compare_texts(pth.read_text(encoding="utf-8"), res.raw_text, sig=5)
+                res = runner.vprofile(average=average, output_path=tmp_out, **kwargs)
+                got_text = res.raw_text
+
+                if out_path.exists():
+                    ref_text = out_path.read_text(encoding="utf-8")
+                    ok, msg = texts_equivalent(ref_text, got_text, spec)
                     if ok:
-                        print(f"OK   {pth.relative_to(root)}")
-                    else:
-                        any_mismatch = True
-                        cand = pth.with_name(pth.stem + "_candidate" + pth.suffix)
-                        cand.write_text(res.raw_text, encoding="utf-8")
-                        print(f"DIFF {pth.relative_to(root)} -> wrote {cand.relative_to(root)} ({msg})")
-                else:
-                    pth.write_text(res.raw_text, encoding="utf-8")
-                    print(f"Wrote {pth.relative_to(root)}")
+                        print(f"OK  {out_path.as_posix()}")
+                        continue
+                    if not args.update:
+                        print(f"DIFF {out_path.name}: {msg}")
+                        changed = True
+                        continue
 
-    if args.overwrite:
-        print("Done. Commit the updated tests/data/*_ref.txt files.")
-    else:
-        if any_mismatch:
-            print("\nOne or more references differed at 5 significant digits.")
-            print("Review the *_candidate.txt files; if changes are intended, re-run with --overwrite and commit.")
-            return 2
-        print("\nAll references match at 5 significant digits.")
+                # Write / update
+                out_path.write_text(got_text, encoding="utf-8")
+                print(f"Wrote {out_path.as_posix()}")
+                changed = True
 
-    if args.include_both:
-        print("Note: 'both' references are optional; enable tests with SCALEFREE_TEST_INCLUDE_BOTH=1")
+    if not changed:
+        print(f"\nAll references match at ~{args.sig} significant digits.")
+        return 0
 
-    return 0
+    if args.update:
+        print(f"\nReferences updated. Re-run without --update to confirm.")
+        return 0
+
+    print(f"\nSome references differ at ~{args.sig} significant digits.")
+    print("Re-run with --update to overwrite reference files.")
+    return 2
 
 
 if __name__ == "__main__":

@@ -1,53 +1,147 @@
-"""Regression tests for the Fortran-backed vprofile interface.
-
-The Fortran program prints floating-point values whose last digits can vary
-across platforms/compilers and (in rare cases) across runs. To keep the test
-stable and aligned with the project requirement, we normalise *every* numeric
-token to **5 significant digits** before comparison.
-"""
-
 from __future__ import annotations
 
+import math
 import re
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
+
+import pytest
 
 from scalefree.vmoments import ScaleFreeRunner
 
 
-# Matches floats/ints in fixed or scientific notation.
+# -----------------------------------------------------------------------------
+# Numerical comparison helpers (cross-platform / compiler tolerant)
+# -----------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SigSpec:
+    """Specification for ~N significant-digit comparisons."""
+
+    sig: int = 5
+    tiny: float = 1e-300
+    factor: float = 2.0
+
+
 _NUM_RE = re.compile(
-    r"""(?x)
-    (?P<num>
-        [+-]?
-        (?:
-            (?:\d+\.\d*)|(?:\.\d+)|(?:\d+)
-        )
-        (?:[eE][+-]?\d+)?
+    r"""^
+    [+-]?
+    (?:
+        (?:\d+\.?\d*)
+        |
+        (?:\d*\.\d+)
     )
-    """
+    (?:
+        [eEdD][+-]?\d+
+        |
+        [+-]\d+   # Fortran sometimes prints like 0.1416-319 (no 'E')
+    )?
+    $""",
+    re.VERBOSE,
 )
 
 
-def _norm_5sig(text: str) -> str:
-    """Normalise numeric tokens to 5 significant digits."""
+def _parse_fortran_float(tok: str) -> Optional[float]:
+    """Parse a float token robustly across Fortran formatting variants."""
+    t = tok.strip()
+    if not t or not _NUM_RE.match(t):
+        return None
 
-    def repl(match: re.Match[str]) -> str:
-        tok = match.group("num")
-        # Keep plain integers as integers (still stable and clearer in diffs)
-        if re.fullmatch(r"[+-]?\d+", tok):
-            return tok
-        try:
-            val = float(tok)
-        except ValueError:
-            return tok
-        # Format with 5 significant digits; keep exponent where helpful.
-        return f"{val:.5g}"
+    # Handle Fortran 'D' exponent
+    t = t.replace("D", "E").replace("d", "e")
 
-    return _NUM_RE.sub(repl, text).strip() + "\n"
+    # Handle missing 'E': e.g. 0.1416-319 or 1.23+05
+    m = re.match(
+        r"^([+-]?(?:\d+(?:\.\d*)?|\d*\.\d+))([+-]\d+)$", t
+    )
+    if m and ("e" not in t.lower()):
+        t = f"{m.group(1)}e{m.group(2)}"
+
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def _sig_tol(x: float, sig: int, factor: float) -> float:
+    """Absolute tolerance corresponding to ~sig significant digits."""
+    ax = abs(x)
+    if ax == 0.0 or not math.isfinite(ax):
+        return 0.0
+    exp10 = math.floor(math.log10(ax))
+    ulp = 10 ** (exp10 - sig + 1)
+    return factor * 0.5 * ulp
+
+
+def _close_sig(a: float, b: float, spec: SigSpec) -> bool:
+    """Return True if a and b agree to ~spec.sig significant digits."""
+    if not (math.isfinite(a) and math.isfinite(b)):
+        return a == b
+
+    if abs(a) < spec.tiny and abs(b) < spec.tiny:
+        return True
+
+    scale = max(abs(a), abs(b))
+    tol = _sig_tol(scale, spec.sig, spec.factor)
+    return abs(a - b) <= max(tol, spec.tiny)
+
+
+def _text_equal_sig(ref_text: str, got_text: str, spec: SigSpec) -> tuple[bool, str]:
+    """Compare two vprofile raw_text blocks token-by-token.
+
+    - Non-numeric tokens must match exactly.
+    - Numeric tokens are compared to ~spec.sig significant digits.
+    """
+    ref_lines = [ln.rstrip() for ln in ref_text.replace("\r\n", "\n").split("\n")]
+    got_lines = [ln.rstrip() for ln in got_text.replace("\r\n", "\n").split("\n")]
+
+    # Drop trailing blank lines
+    while ref_lines and ref_lines[-1] == "":
+        ref_lines.pop()
+    while got_lines and got_lines[-1] == "":
+        got_lines.pop()
+
+    if len(ref_lines) != len(got_lines):
+        return False, f"Line count differs: ref={len(ref_lines)} got={len(got_lines)}"
+
+    for i, (rln, gln) in enumerate(zip(ref_lines, got_lines), start=1):
+        rtoks = rln.split()
+        gtoks = gln.split()
+        if len(rtoks) != len(gtoks):
+            return (
+                False,
+                f"Token count differs at line {i}: ref={len(rtoks)} got={len(gtoks)}\n"
+                f"ref: {rln}\n"
+                f"got: {gln}",
+            )
+        for j, (rt, gt) in enumerate(zip(rtoks, gtoks), start=1):
+            ra = _parse_fortran_float(rt)
+            ga = _parse_fortran_float(gt)
+            if ra is not None and ga is not None:
+                if not _close_sig(ra, ga, spec):
+                    return (
+                        False,
+                        f"Numeric mismatch at line {i}, token {j}: ref={rt} got={gt}",
+                    )
+            else:
+                if rt != gt:
+                    return (
+                        False,
+                        f"Token mismatch at line {i}, token {j}: ref={rt!r} got={gt!r}",
+                    )
+
+    return True, ""
+
+
+# -----------------------------------------------------------------------------
+# Regression test
+# -----------------------------------------------------------------------------
 
 
 def test_vprofile_regression(scalefree_exe: Path, ref_dir: Path, tmp_path: Path) -> None:
-    """Compare vprofile raw output to stored references (5 significant digits)."""
+    """Compare vprofile raw output to stored references (~5 significant digits)."""
 
     # IMPORTANT: keep these kwargs aligned with tests/make_vprofile_refs.py.
     # For algorithm=3 we exercise the vp-table path (usevp=True) and use a
@@ -84,16 +178,19 @@ def test_vprofile_regression(scalefree_exe: Path, ref_dir: Path, tmp_path: Path)
     }
 
     runner = ScaleFreeRunner(scalefree_exe, workdir=tmp_path)
+    spec = SigSpec(sig=5, tiny=1e-300, factor=2.0)
 
     for name, cfg in cases.items():
-        ref_text = (ref_dir / cfg["ref"]).read_text(encoding="utf-8")
+        ref_path = ref_dir / cfg["ref"]
+        if not ref_path.exists():
+            pytest.fail(f"Missing reference file: {ref_path}")
+        ref_text = ref_path.read_text(encoding="utf-8")
 
-        # IMPORTANT: provide a *short* output filename to avoid Fortran
-        # character-length truncation issues on some platforms.
+        # Provide a *short* output filename to avoid Fortran character-length
+        # truncation issues on some platforms.
         out_path = tmp_path / f"vp_{name}.txt"
 
         res = runner.vprofile(**base, average=cfg["average"], output_path=out_path)
 
-        got = _norm_5sig(res.raw_text)
-        exp = _norm_5sig(ref_text)
-        assert got == exp
+        ok, msg = _text_equal_sig(ref_text, res.raw_text, spec)
+        assert ok, msg
