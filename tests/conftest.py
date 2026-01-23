@@ -14,6 +14,15 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
+@pytest.fixture(scope="session")
+def resources() -> Path:
+    """Path to on-disk resources used by regression tests.
+
+    Reference outputs are stored under tests/data/.
+    """
+    return repo_root() / "tests" / "data"
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _seed_rngs() -> None:
     """Seed RNGs to reduce test flakiness.
@@ -52,7 +61,8 @@ def build_fortran_executable(pytestconfig):
 
     root = repo_root()
     src = root / "fortran_src" / "scalefree.f"
-    exe = root / "fortran_src" / "fitvp"
+    # Keep in sync with CI (GitLab) build step.
+    exe = root / "fortran_src" / "scalefree.e"
 
     if not src.exists():
         raise FileNotFoundError(f"Missing Fortran source: {src}")
@@ -71,11 +81,18 @@ def build_fortran_executable(pytestconfig):
 
 @pytest.fixture(scope="session")
 def scalefree_exe(build_fortran_executable):
-    """Return the path to the fitvp executable, if present."""
-    exe = repo_root() / "fortran_src" / "fitvp"
-    if not exe.exists():
-        pytest.skip(
-            "Fortran executable 'fitvp' not found. "
-            "Run tests with --build or build it locally."
-        )
-    return str(exe)
+    """Return the path to the Fortran executable, if present.
+
+    Historically the executable was named 'fitvp'. The CI pipeline currently
+    builds 'scalefree.e'. We accept either to keep the test structure stable.
+    """
+
+    root = repo_root() / "fortran_src"
+    for candidate in (root / "scalefree.e", root / "fitvp"):
+        if candidate.exists():
+            return str(candidate)
+
+    pytest.skip(
+        "Fortran executable not found (expected 'fortran_src/scalefree.e' or "
+        "'fortran_src/fitvp'). Build it locally or run tests with --build."
+    )
