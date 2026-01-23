@@ -767,6 +767,227 @@ def _extract_last_intrinsic_block_from_stdout(stdout_text: str) -> str:
     return "\n".join(out) + "\n"
 
 
+
+
+# ---------------------------------------------------------------------
+# DF=1 beta correction (internal pre-processing)
+# ---------------------------------------------------------------------
+
+
+def _intrinsic_shell_average_beta(blocks: Dict[str, Any]) -> float:
+    """Extract beta from the intrinsic shell-average block."""
+    blk = blocks.get("intrinsic_shell_average")
+    if not isinstance(blk, dict):
+        raise RuntimeError(
+            "Could not find intrinsic_shell_average in ScaleFree output while "
+            "attempting DF=1 beta correction."
+        )
+
+    cols = blk.get("columns") or []
+    data = blk.get("data")
+    if data is None or getattr(data, "size", 0) == 0:
+        raise RuntimeError(
+            "intrinsic_shell_average block is present but has no data while "
+            "attempting DF=1 beta correction."
+        )
+
+    # Columns are expected to include 'beta' in the DF=1 averaged intrinsic mode
+    try:
+        j = [c.lower() for c in cols].index("beta")
+    except ValueError as e:
+        raise RuntimeError(
+            "intrinsic_shell_average block does not contain a 'beta' column "
+            "while attempting DF=1 beta correction."
+        ) from e
+
+    return float(np.asarray(data)[0, j])
+
+
+def _df1_eval_intrinsic_beta(
+    runner: "ScaleFreeRunner",
+    *,
+    potential: Any,
+    gamma: float,
+    q: float,
+    beta_trial: float,
+    s: float,
+    t: float,
+    inclination: float,
+    xi: float,
+    theta: float,
+    integration: int,
+    ngl_or_eps: float,
+    timeout_s: int,
+) -> float:
+    """
+    Evaluate the intrinsic (average=True) shell-averaged beta for a candidate
+    beta_trial, forcing algorithm=1 and maxmom=4 for speed/stability.
+    """
+    res = runner.vprofile(
+        potential=potential,
+        gamma=gamma,
+        q=q,
+        beta=beta_trial,
+        s=s,
+        t=t,
+        inclination=inclination,
+        xi=xi,
+        theta=theta,
+        df=1,
+        integration=integration,
+        ngl_or_eps=ngl_or_eps,
+        algorithm=1,
+        maxmom=4,
+        average=True,
+        kinematics="intrinsic",
+        usevp=False,
+        verbose_vp=0,
+        output_path=None,
+        timeout_s=timeout_s,
+        parse_stdout_fallback=False,
+        debug_prompts=False,
+        _skip_df1_beta_correction=True,
+    )
+    return _intrinsic_shell_average_beta(res.blocks)
+
+
+def _df1_correct_beta(
+    runner: "ScaleFreeRunner",
+    *,
+    beta_input: float,
+    potential: Any,
+    gamma: float,
+    q: float,
+    s: float,
+    t: float,
+    inclination: float,
+    xi: float,
+    theta: float,
+    integration: int,
+    ngl_or_eps: float,
+    timeout_s: int,
+    tol: float = 1e-5,
+    max_iter: int = 40,
+) -> float:
+    """
+    Find beta_corrected in DF=1 such that intrinsic_shell_average beta matches
+    beta_input to within tol.
+
+    Assumes the mapping is monotonic and uses a bracketed bisection search.
+    """
+    target = float(beta_input)
+
+    # Physical-ish bounds for beta in ScaleFree (avoid endpoints for safety)
+    lo_bound = -0.999999
+    hi_bound = 0.999999
+
+    cache: Dict[float, float] = {}
+
+    def eval_beta_out(bc: float) -> float:
+        bc = float(bc)
+        if bc in cache:
+            return cache[bc]
+        try:
+            out = _df1_eval_intrinsic_beta(
+                runner,
+                potential=potential,
+                gamma=gamma,
+                q=q,
+                beta_trial=bc,
+                s=s,
+                t=t,
+                inclination=inclination,
+                xi=xi,
+                theta=theta,
+                integration=integration,
+                ngl_or_eps=ngl_or_eps,
+                timeout_s=timeout_s,
+            )
+        except Exception as e:
+            raise ValueError(
+                "The desired beta is not physically consistent with the other "
+                "input parameters."
+            ) from e
+        cache[bc] = float(out)
+        return float(out)
+
+    def f(bc: float) -> float:
+        return eval_beta_out(bc) - target
+
+    # Initial guess: use the requested beta, clamped to bounds
+    x0 = min(max(target, lo_bound), hi_bound)
+    f0 = f(x0)
+    if abs(f0) <= tol:
+        return float(x0)
+
+    # Bracket search expanding around x0
+    step0 = 0.05
+    a = b = x0
+    fa = fb = f0
+    bracket_found = False
+
+    for k in range(14):
+        step = step0 * (2**k)
+        a_try = max(lo_bound, x0 - step)
+        b_try = min(hi_bound, x0 + step)
+
+        if a_try != a:
+            fa_try = f(a_try)
+            if abs(fa_try) <= tol:
+                return float(a_try)
+            if fa_try * f0 < 0:
+                a, fa = a_try, fa_try
+                b, fb = x0, f0
+                bracket_found = True
+                break
+            a, fa = a_try, fa_try
+
+        if b_try != b:
+            fb_try = f(b_try)
+            if abs(fb_try) <= tol:
+                return float(b_try)
+            if f0 * fb_try < 0:
+                a, fa = x0, f0
+                b, fb = b_try, fb_try
+                bracket_found = True
+                break
+            b, fb = b_try, fb_try
+
+        if a_try == lo_bound and b_try == hi_bound:
+            break
+
+    if not bracket_found:
+        # Last resort: check global bounds
+        fa = f(lo_bound)
+        if abs(fa) <= tol:
+            return float(lo_bound)
+        fb = f(hi_bound)
+        if abs(fb) <= tol:
+            return float(hi_bound)
+        if fa * fb > 0:
+            raise ValueError(
+                "The desired beta is not physically consistent with the other "
+                "input parameters."
+            )
+        a, b = lo_bound, hi_bound
+
+    # Bisection
+    for _ in range(max_iter):
+        c = 0.5 * (a + b)
+        fc = f(c)
+        if abs(fc) <= tol:
+            return float(c)
+        if fa * fc < 0:
+            b, fb = c, fc
+        else:
+            a, fa = c, fc
+
+    # If we did not converge, treat as inconsistent (avoid silent surprises)
+    raise ValueError(
+        "The desired beta is not physically consistent with the other "
+        "input parameters."
+    )
+
 # ---------------------------------------------------------------------
 # Prompt-driven runner
 # ---------------------------------------------------------------------
@@ -829,8 +1050,32 @@ class ScaleFreeRunner:
         parse_stdout_fallback: bool = False,
         # legacy flag; kept for compatibility
         debug_prompts: bool = False,
+        _skip_df1_beta_correction: bool = False,
     ) -> ScaleFreeResult:
         ipot = _potential_code(potential)
+
+        # ---------------------------------------------------------
+        # DF=1 beta correction (internal-only)
+        # ---------------------------------------------------------
+        beta_corrected: Optional[float] = None
+        if (not _skip_df1_beta_correction) and int(df) == 1:
+            beta_corrected = _df1_correct_beta(
+                self,
+                beta_input=float(beta),
+                potential=potential,
+                gamma=gamma,
+                q=q,
+                s=s,
+                t=t,
+                inclination=inclination,
+                xi=xi,
+                theta=theta,
+                integration=int(integration),
+                ngl_or_eps=float(ngl_or_eps),
+                timeout_s=int(timeout_s),
+            )
+            beta = float(beta_corrected)
+
 
         # ---------------------------------------------------------
         # Output handling
@@ -1125,6 +1370,8 @@ class ScaleFreeRunner:
                     print(raw, end="" if raw.endswith("\n") else "\n")
                 blocks = parse_scalefree_output(raw)
                 blocks, raw = _finalize_blocks(blocks, raw)
+                if beta_corrected is not None:
+                    blocks["scalefree_df1_beta"] = float(beta_corrected)
                 return ScaleFreeResult(
                     blocks=blocks,
                     raw_text=raw,
@@ -1174,6 +1421,8 @@ class ScaleFreeRunner:
             blocks, base_raw = _finalize_blocks(blocks, base_raw)
 
             if blocks:
+                if beta_corrected is not None:
+                    blocks["scalefree_df1_beta"] = float(beta_corrected)
                 return ScaleFreeResult(
                     blocks=blocks,
                     raw_text=base_raw,
@@ -1189,6 +1438,8 @@ class ScaleFreeRunner:
                     blocks,
                     raw_stdout_struct,
                 )
+                if beta_corrected is not None:
+                    blocks["scalefree_df1_beta"] = float(beta_corrected)
                 return ScaleFreeResult(
                     blocks=blocks,
                     raw_text=raw_stdout_struct,
