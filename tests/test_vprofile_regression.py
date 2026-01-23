@@ -178,7 +178,9 @@ def test_vprofile_regression(scalefree_exe: Path, ref_dir: Path, tmp_path: Path)
     }
 
     runner = ScaleFreeRunner(scalefree_exe, workdir=tmp_path)
-    spec = SigSpec(sig=5, tiny=1e-300, factor=2.0)
+    # NOTE: in CI we sometimes see sub-e-8 variations (and even underflow/formatting
+    # differences like "0.1416-319" vs "0"). We treat |x|<1e-8 as zero.
+    spec = SigSpec(sig=5, tiny=1e-8, factor=2.0)
 
     for name, cfg in cases.items():
         ref_path = ref_dir / cfg["ref"]

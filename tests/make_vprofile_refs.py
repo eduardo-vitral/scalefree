@@ -66,7 +66,9 @@ def _parse_float_token(tok: str) -> float | None:
 @dataclass(frozen=True)
 class SigSpec:
     sig: int = 5
-    tiny: float = 1e-300
+    # Treat ultra-small values as zero for cross-platform stability.
+    # (e.g. "0.1416-319" vs "0" in some Fortran/GFortran builds)
+    tiny: float = 1e-8
     factor: float = 2.0  # tolerance multiplier (helps cross-platform)
 
 
