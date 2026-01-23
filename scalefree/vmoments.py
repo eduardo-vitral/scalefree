@@ -43,6 +43,8 @@ import re
 import shutil
 import subprocess
 import warnings
+import hashlib
+from importlib.metadata import PackageNotFoundError, version as pkg_version
 
 import numpy as np
 
@@ -190,9 +192,40 @@ def _user_cache_dir() -> Path:
     return Path.home() / ".cache" / "scalefree"
 
 
+def _installed_pkg_version() -> str:
+    """Return installed distribution version for cache invalidation."""
+    try:
+        return pkg_version("scalefree")
+    except PackageNotFoundError:
+        # editable / direct execution fallback
+        return "0.0.0"
+
+
+def _file_sha256_short(path: Path, n: int = 12) -> str:
+    """Short stable hash for cache keys."""
+    h = hashlib.sha256()
+    h.update(path.read_bytes())
+    return h.hexdigest()[:n]
+
+
+def _backend_cache_key() -> str:
+    """
+    Cache key that changes when either:
+      - the installed scalefree version changes, OR
+      - the packaged Fortran source changes.
+    """
+    ver = _installed_pkg_version()
+    src = _packaged_fortran_source()
+    if src.exists():
+        return f"{ver}-{_file_sha256_short(src)}"
+    return ver
+
+
 def _default_cached_exe() -> Path:
     exe_name = "scalefree.e" if os.name != "nt" else "scalefree.exe"
-    return _user_cache_dir() / exe_name
+    key = _backend_cache_key()
+    # Versioned+hashed cache folder prevents stale executables after pip upgrades
+    return _user_cache_dir() / "backend" / key / exe_name
 
 
 def _compile_backend(*, exe: Path, src: Path) -> None:
