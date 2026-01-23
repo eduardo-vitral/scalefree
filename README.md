@@ -32,7 +32,7 @@ Typical uses:
 - Proper-motion (plane-of-sky) kinematics (POSr, POSt)
 - VP reconstruction from moments (when enabled)
 
-### `scalefree.hermite`
+### `hermite(...)`
 Utilities to fit Gauss–Hermite coefficients to a velocity-profile file and to evaluate analytic Gauss–Hermite profiles.
 
 ### `mock(...)`
@@ -49,7 +49,7 @@ poetry install
 
 ### With pip
 ```bash
-pip install scalefree
+pip install scalefree --upgrade
 ```
 
 ---
@@ -71,35 +71,66 @@ Install gfortran:
 ```python
 from scalefree import vprofile
 
+# Minimal projected (point) run + VP/Gauss–Hermite reconstruction
 res = vprofile(
-    potential="logarithmic",  # or "kepler", 1, 2, or a callable returning 1/2
+    potential="log",   # "log"/"logarithmic" or "kepler" (or 2 / 1)
     gamma=2.0,
     q=0.8,
     df=1,
     beta=0.0,
-    s=0.5,
+    s=0.0,
+    t=0.0,
+    inclination=60.0,  # degrees
+    xi=0.0,            # degrees on projected plane (0 = major axis)
+    theta=0.0,         # degrees (used only for intrinsic runs; safe to keep)
+    usevp=True,        # set False if you only want moments
+)
+
+# Projected velocity moments (iproj: 1=LOS, 2=POSr, 3=POSt)
+proj_los = res.blocks["projected_point"]["by_iproj"][1]
+mu = proj_los["v1"]
+sigma = (proj_los["v2"] - mu**2) ** 0.5
+print(f"LOS: mean={mu:.6g}, sigma={sigma:.6g}")
+
+# Optional: VP / Gauss–Hermite summary (only present when usevp=True)
+vp_los = res.blocks["vp"]["by_iproj"][1]
+print(f"LOS GH: h3={vp_los['h3']:.6g}, h4={vp_los['h4']:.6g}")
+```
+
+### 2) Fit Gauss–Hermite moments from a VP file
+```python
+from pathlib import Path
+import tempfile
+import numpy as np
+
+from scalefree import vprofile, hermite
+
+res = vprofile(
+    potential="log",
+    gamma=2.0,
+    q=0.8,
+    beta=0.0,
+    s=0.0,
     t=0.0,
     inclination=60.0,
     xi=0.0,
     theta=0.0,
     usevp=True,
-    algorithm=3,
 )
 
-print(res.blocks.keys())
-print(res.blocks["vp"]["by_iproj"][1])  # iproj=1 LOS, 2 POSr, 3 POSt
-```
+iproj = 1  # 1=LOS, 2=POSr, 3=POSt
+vp_data = res.blocks["vp_table"][iproj]["data"]  # (N,2): [v, vp]
 
-### 2) Fit Gauss–Hermite moments from a VP file
-```python
-from scalefree import hermite  # module
+# Write to a writable temp location
+vp_path = Path(tempfile.gettempdir()) / "my_vp.dat"
+np.savetxt(vp_path, vp_data, header="v vp")
 
-gauss_info, gaussh_info, h_moments = hermite.hermite("my_vp.dat")
+gauss_info, gaussh_info, h_moments = hermite.hermite(vp_path)
 print(gaussh_info)
 print(h_moments["h3"], h_moments["h4"])
 ```
 
-### 3) Generate a simple mock
+### 3) Generate a simple mock (currently deprecated)
 ```python
 from scalefree import mock
 
