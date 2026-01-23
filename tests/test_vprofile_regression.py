@@ -53,9 +53,7 @@ def _parse_fortran_float(tok: str) -> Optional[float]:
     t = t.replace("D", "E").replace("d", "e")
 
     # Handle missing 'E': e.g. 0.1416-319 or 1.23+05
-    m = re.match(
-        r"^([+-]?(?:\d+(?:\.\d*)?|\d*\.\d+))([+-]\d+)$", t
-    )
+    m = re.match(r"^([+-]?(?:\d+(?:\.\d*)?|\d*\.\d+))([+-]\d+)$", t)
     if m and ("e" not in t.lower()):
         t = f"{m.group(1)}e{m.group(2)}"
 
@@ -88,14 +86,30 @@ def _close_sig(a: float, b: float, spec: SigSpec) -> bool:
     return abs(a - b) <= max(tol, spec.tiny)
 
 
-def _text_equal_sig(ref_text: str, got_text: str, spec: SigSpec) -> tuple[bool, str]:
+def _text_equal_sig(
+    ref_text: str,
+    got_text: str,
+    spec: SigSpec,
+) -> tuple[bool, str]:
     """Compare two vprofile raw_text blocks token-by-token.
 
     - Non-numeric tokens must match exactly.
     - Numeric tokens are compared to ~spec.sig significant digits.
     """
-    ref_lines = [ln.rstrip() for ln in ref_text.replace("\r\n", "\n").split("\n")]
-    got_lines = [ln.rstrip() for ln in got_text.replace("\r\n", "\n").split("\n")]
+    ref_lines = [
+        ln.rstrip()
+        for ln in ref_text.replace(
+            "\r\n",
+            "\n",
+        ).split("\n")
+    ]
+    got_lines = [
+        ln.rstrip()
+        for ln in got_text.replace(
+            "\r\n",
+            "\n",
+        ).split("\n")
+    ]
 
     # Drop trailing blank lines
     while ref_lines and ref_lines[-1] == "":
@@ -104,7 +118,14 @@ def _text_equal_sig(ref_text: str, got_text: str, spec: SigSpec) -> tuple[bool, 
         got_lines.pop()
 
     if len(ref_lines) != len(got_lines):
-        return False, f"Line count differs: ref={len(ref_lines)} got={len(got_lines)}"
+        return (
+            False,
+            "Line"
+            + " count"
+            + " differs: "
+            + f"ref={len(ref_lines)} "
+            + f"got={len(got_lines)}",
+        )
 
     for i, (rln, gln) in enumerate(zip(ref_lines, got_lines), start=1):
         rtoks = rln.split()
@@ -112,7 +133,10 @@ def _text_equal_sig(ref_text: str, got_text: str, spec: SigSpec) -> tuple[bool, 
         if len(rtoks) != len(gtoks):
             return (
                 False,
-                f"Token count differs at line {i}: ref={len(rtoks)} got={len(gtoks)}\n"
+                "Token count differs at "
+                f"line {i}: "
+                f"ref={len(rtoks)} "
+                f"got={len(gtoks)}\n"
                 f"ref: {rln}\n"
                 f"got: {gln}",
             )
@@ -123,13 +147,21 @@ def _text_equal_sig(ref_text: str, got_text: str, spec: SigSpec) -> tuple[bool, 
                 if not _close_sig(ra, ga, spec):
                     return (
                         False,
-                        f"Numeric mismatch at line {i}, token {j}: ref={rt} got={gt}",
+                        "Numeric mismatch at line "
+                        f"{i}, "
+                        f"token {j}: "
+                        f"ref={rt} "
+                        f"got={gt}",
                     )
             else:
                 if rt != gt:
                     return (
                         False,
-                        f"Token mismatch at line {i}, token {j}: ref={rt!r} got={gt!r}",
+                        "Token mismatch at line "
+                        f"{i}, token "
+                        f"{j}: "
+                        f"ref={rt!r} "
+                        f"got={gt!r}",
                     )
 
     return True, ""
@@ -140,8 +172,13 @@ def _text_equal_sig(ref_text: str, got_text: str, spec: SigSpec) -> tuple[bool, 
 # -----------------------------------------------------------------------------
 
 
-def test_vprofile_regression(scalefree_exe: Path, ref_dir: Path, tmp_path: Path) -> None:
-    """Compare vprofile raw output to stored references (~5 significant digits)."""
+def test_vprofile_regression(
+    scalefree_exe: Path, ref_dir: Path, tmp_path: Path
+) -> None:
+    """
+    Compare vprofile raw output to stored references
+    (~5 significant digits).
+    """
 
     # IMPORTANT: keep these kwargs aligned with tests/make_vprofile_refs.py.
     # For algorithm=3 we exercise the vp-table path (usevp=True) and use a
@@ -173,12 +210,19 @@ def test_vprofile_regression(scalefree_exe: Path, ref_dir: Path, tmp_path: Path)
     )
 
     cases = {
-        "projected_point": {"average": False, "ref": "projected_point_alg3_ref.txt"},
-        "projected_avg": {"average": True, "ref": "projected_avg_alg3_ref.txt"},
+        "projected_point": {
+            "average": False,
+            "ref": "projected_point_alg3_ref.txt",
+        },
+        "projected_avg": {
+            "average": True,
+            "ref": "projected_avg_alg3_ref.txt",
+        },
     }
 
     runner = ScaleFreeRunner(scalefree_exe, workdir=tmp_path)
-    # NOTE: in CI we sometimes see sub-e-8 variations (and even underflow/formatting
+    # NOTE: in CI we sometimes see sub-e-8 variations
+    # (and even underflow/formatting
     # differences like "0.1416-319" vs "0"). We treat |x|<1e-8 as zero.
     spec = SigSpec(sig=5, tiny=1e-8, factor=2.0)
 
@@ -192,7 +236,11 @@ def test_vprofile_regression(scalefree_exe: Path, ref_dir: Path, tmp_path: Path)
         # truncation issues on some platforms.
         out_path = tmp_path / f"vp_{name}.txt"
 
-        res = runner.vprofile(**base, average=cfg["average"], output_path=out_path)
+        res = runner.vprofile(
+            **base,
+            average=cfg["average"],
+            output_path=out_path,
+        )
 
         ok, msg = _text_equal_sig(ref_text, res.raw_text, spec)
         assert ok, msg

@@ -19,7 +19,7 @@ from pathlib import Path
 import argparse
 import math
 import re
-from typing import Iterable, Tuple
+from typing import Tuple
 
 from scalefree.vmoments import ScaleFreeRunner
 
@@ -29,12 +29,8 @@ from scalefree.vmoments import ScaleFreeRunner
 # ------------------------------
 
 
-_NUM_RE = re.compile(
-    r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+-]?\d+)?$"
-)
-_FORTRAN_NOE_RE = re.compile(
-    r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+))([+-]\d+)$"
-)
+_NUM_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eEdD][+-]?\d+)?$")
+_FORTRAN_NOE_RE = re.compile(r"^([+-]?(?:\d+(?:\.\d*)?|\.\d+))([+-]\d+)$")
 
 
 def _parse_float_token(tok: str) -> float | None:
@@ -101,18 +97,30 @@ def _tokenise_lines(text: str) -> list[list[str]]:
     return [line.rstrip().split() for line in lines]
 
 
-def texts_equivalent(ref_text: str, got_text: str, spec: SigSpec) -> Tuple[bool, str]:
+def texts_equivalent(
+    ref_text: str,
+    got_text: str,
+    spec: SigSpec,
+) -> Tuple[bool, str]:
     """Return (ok, message) comparing two outputs at ~sig digits."""
     ref_lines = _tokenise_lines(ref_text)
     got_lines = _tokenise_lines(got_text)
     if len(ref_lines) != len(got_lines):
-        return False, f"line-count differs: expected {len(ref_lines)} got {len(got_lines)}"
+        return (
+            False,
+            "line-count differs: "
+            + f"expected {len(ref_lines)} "
+            + f"got {len(got_lines)}",
+        )
 
     for i, (rtoks, gtoks) in enumerate(zip(ref_lines, got_lines), start=1):
         if len(rtoks) != len(gtoks):
             return (
                 False,
-                f"token-count differs on line {i}: expected {len(rtoks)} got {len(gtoks)}",
+                "token-count differs on "
+                + f"line {i}: "
+                + f"expected {len(rtoks)} "
+                + f"got {len(gtoks)}",
             )
         for j, (r, g) in enumerate(zip(rtoks, gtoks), start=1):
             rf = _parse_float_token(r)
@@ -121,13 +129,21 @@ def texts_equivalent(ref_text: str, got_text: str, spec: SigSpec) -> Tuple[bool,
                 if not _close_sig(rf, gf, spec):
                     return (
                         False,
-                        f"numeric mismatch on line {i}, token {j}: expected {r} got {g}",
+                        "numeric mismatch on"
+                        + f" line {i},"
+                        + f" token {j}:"
+                        + f" expected {r}"
+                        + f" got {g}",
                     )
             else:
                 if r != g:
                     return (
                         False,
-                        f"text mismatch on line {i}, token {j}: expected {r!r} got {g!r}",
+                        "text mismatch on"
+                        + f" line {i},"
+                        + f" token {j}:"
+                        + f" expected {r!r}"
+                        + f" got {g!r}",
                     )
     return True, "ok"
 
@@ -165,7 +181,8 @@ def _common_kwargs(*, algorithm: int, kinematics: str) -> dict:
     }
 
     if algorithm == 3:
-        # algorithm=3 supports vp-table mode; using fewer moments is both faster
+        # algorithm=3 supports vp-table mode;
+        # using fewer moments is both faster
         # and tends to be more stable across compilers.
         base.update(
             {
@@ -188,8 +205,16 @@ def main() -> int:
     ap.add_argument(
         "--exe",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "fortran_src" / "scalefree.e",
-        help="Path to scalefree Fortran executable (default: repo fortran_src/scalefree.e)",
+        default=Path(
+            __file__,
+        )
+        .resolve()
+        .parents[1]
+        / "fortran_src"
+        / "scalefree.e",
+        help="Path to scalefree "
+        + "Fortran executable "
+        + "(default: repo fortran_src/scalefree.e)",
     )
     ap.add_argument(
         "--sig",
@@ -200,7 +225,9 @@ def main() -> int:
     ap.add_argument(
         "--update",
         action="store_true",
-        help="Overwrite reference files when they differ at the chosen precision.",
+        help="Overwrite reference files when"
+        + " they differ at the "
+        + "chosen precision.",
     )
     args = ap.parse_args()
 
@@ -221,11 +248,19 @@ def main() -> int:
                 out_name = f"{kinematics}_{tag}_alg{algorithm}_ref.txt"
                 out_path = data_dir / out_name
 
-                kwargs = _common_kwargs(algorithm=algorithm, kinematics=kinematics)
-                # Keep output paths short (some Fortran builds truncate file names).
+                kwargs = _common_kwargs(
+                    algorithm=algorithm,
+                    kinematics=kinematics,
+                )
+                # Keep output paths short
+                # (some Fortran builds truncate file names).
                 tmp_out = workdir / "vp.txt"
 
-                res = runner.vprofile(average=average, output_path=tmp_out, **kwargs)
+                res = runner.vprofile(
+                    average=average,
+                    output_path=tmp_out,
+                    **kwargs,
+                )
                 got_text = res.raw_text
 
                 if out_path.exists():
@@ -249,7 +284,7 @@ def main() -> int:
         return 0
 
     if args.update:
-        print(f"\nReferences updated. Re-run without --update to confirm.")
+        print("\nReferences updated. Re-run without --update to confirm.")
         return 0
 
     print(f"\nSome references differ at ~{args.sig} significant digits.")
