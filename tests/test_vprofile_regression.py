@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
-
+import os
 import numpy as np
 import pytest
 
@@ -10,17 +9,8 @@ import scalefree
 from scalefree.vmoments import parse_scalefree_output
 
 
-STRICT = os.getenv("SCALEFREE_STRICT_TESTS", "0").strip() == "1"
-
-
 def _case_cfg(algorithm: int) -> dict:
-    """
-    Minimal algorithm-dependent settings.
-
-    Notes:
-      - alg=1: original behaviour (few moments)
-      - alg=2/3: more moments to avoid REGMAT2 issues in some regimes
-    """
+    """Algorithm-dependent settings aligned with make_vprofile_refs.py."""
     if algorithm == 1:
         return dict(maxmom=4)
     if algorithm == 2:
@@ -32,7 +22,6 @@ def _case_cfg(algorithm: int) -> dict:
 
 def _run_case(exe_path: Path, *, average: bool, workdir: Path, algorithm: int, kinematics: str):
     runner = scalefree.ScaleFreeRunner(exe_path=exe_path, workdir=workdir)
-
     cfg = _case_cfg(algorithm)
 
     return runner.vprofile(
@@ -51,8 +40,8 @@ def _run_case(exe_path: Path, *, average: bool, workdir: Path, algorithm: int, k
         algorithm=algorithm,
         maxmom=cfg["maxmom"],
         average=average,
-        kinematics=kinematics,   # <-- explicit: avoids ambiguity
-        usevp=(kinematics == "projected"),
+        kinematics=kinematics,
+        usevp=True,
         verbose_vp=0,
         output_path=None,
         debug_prompts=False,
@@ -62,203 +51,130 @@ def _run_case(exe_path: Path, *, average: bool, workdir: Path, algorithm: int, k
     )
 
 
-# -----------------------------
-# Smoke / contract assertions
-# -----------------------------
-
-def _assert_block_has_columns_and_data(block: dict, *, min_rows: int = 1, min_cols: int = 1):
-    assert isinstance(block, dict)
-    cols = block.get("columns", [])
-    data = block.get("data", None)
-
-    assert isinstance(cols, list) and len(cols) >= min_cols
-    assert data is not None
-
-    arr = np.asarray(data)
-    assert arr.ndim == 2
-    assert arr.shape[0] >= min_rows
-    assert arr.shape[1] >= min_cols
-
-
-def _assert_projected_contract(blocks: dict, *, average: bool):
-    kind = "projected_circle_average" if average else "projected_point"
-    assert kind in blocks, f"Missing '{kind}' block"
-
-    blk = blocks[kind]
-    _assert_block_has_columns_and_data(blk, min_rows=3, min_cols=6)
-
-    # Columns in Fortran structured output are expected to be:
-    # iproj rho_p v1 v2 v3 v4
-    expected = ["iproj", "rho_p", "v1", "v2", "v3", "v4"]
-    assert blk["columns"] == expected
-
-    arr = np.asarray(blk["data"], dtype=float)
-
-    # iproj should be 1..3
-    iproj = arr[:, 0].astype(int)
-    assert set(iproj.tolist()) == {1, 2, 3}
-
-    # rho_p should be positive
-    rho_p = arr[:, 1]
-    assert np.all(rho_p > 0)
-
-    # v2 (second moment) should be >= 0
-    v2 = arr[:, 3]
-    assert np.all(v2 >= 0)
-
-
-def _assert_vp_contract(blocks: dict):
-    # VP blocks only exist when projected mode & usevp=True
-    assert "vp" in blocks, "Missing 'vp' block (backend may have stopped mid-run)"
-    _assert_block_has_columns_and_data(blocks["vp"], min_rows=3, min_cols=7)
-
-    # vp_table should exist and have iproj 1..3 tables
-    assert "vp_table" in blocks, "Missing 'vp_table' block"
-    vpt = blocks["vp_table"]
-    assert isinstance(vpt, dict) and vpt, "vp_table is empty"
-
-    for ip in (1, 2, 3):
-        assert ip in vpt, f"vp_table missing iproj={ip}"
-        tbl = vpt[ip]
-        _assert_block_has_columns_and_data(tbl, min_rows=5, min_cols=2)
-        assert tbl["columns"] == ["v", "vp"]
-
-
-def _assert_intrinsic_contract(blocks: dict, *, average: bool):
-    kind = "intrinsic_shell_average" if average else "intrinsic_point"
-    assert kind in blocks, f"Missing '{kind}' block"
-
-    blk = blocks[kind]
-    if average:
-        assert blk["columns"] == ["rho", "vphi", "vr2", "vth2", "vphi2", "beta"]
-        _assert_block_has_columns_and_data(blk, min_rows=1, min_cols=6)
-    else:
-        assert blk["columns"] == ["rho", "vphi", "vr2", "vth2", "vphi2"]
-        _assert_block_has_columns_and_data(blk, min_rows=1, min_cols=5)
-
-    arr = np.asarray(blk["data"], dtype=float)
-    assert np.all(np.isfinite(arr[:, :5])), "Intrinsic moments contain NaN/Inf unexpectedly"
-    assert np.all(arr[:, 0] > 0), "Intrinsic rho must be positive"
-
-
-# -----------------------------
-# Optional strict regression
-# -----------------------------
-
-def _ref_path(ref_dir: Path, *, average: bool, algorithm: int) -> Path:
-    stem = "out_avg" if average else "out_point"
-    return ref_dir / f"{stem}_alg{algorithm}_ref.txt"
-
-
-def _skip_if_missing_ref(ref_path: Path):
-    if not ref_path.exists():
-        pytest.skip(
-            f"Missing reference file: {ref_path}\n"
-            "Generate/refresh refs by running:\n"
-            "  python tests/make_vprofile_refs.py\n"
-            "and commit tests/data/*_ref.txt."
-        )
-
-
-def _assert_block_close(new_blk, ref_blk, *, rtol=5e-5, atol=1e-7):
-    """
-    Relaxed tolerances to accommodate platform/compiler differences.
-    """
+def _assert_block_close(new_blk, ref_blk, *, rtol=1e-6, atol=5e-8):
     assert new_blk.get("columns", []) == ref_blk.get("columns", [])
 
-    new_data = np.asarray(new_blk.get("data"), dtype=float)
-    ref_data = np.asarray(ref_blk.get("data"), dtype=float)
+    new_data = np.asarray(new_blk.get("data"))
+    ref_data = np.asarray(ref_blk.get("data"))
 
+    assert new_data is not None and ref_data is not None
     assert new_data.shape == ref_data.shape
 
-    # Handle extremely tiny underflows and denormals consistently.
     tiny = 1e-300
     new_data = np.where(np.abs(new_data) < tiny, 0.0, new_data)
     ref_data = np.where(np.abs(ref_data) < tiny, 0.0, ref_data)
 
-    assert np.allclose(new_data, ref_data, rtol=rtol, atol=atol, equal_nan=True)
+    assert np.allclose(
+        new_data,
+        ref_data,
+        rtol=rtol,
+        atol=atol,
+        equal_nan=True,
+    )
 
 
 def _compare_outputs(new_blocks, ref_blocks):
-    # Only compare projected outputs (refs are projected)
-    must_have = []
-    if "projected_point" in ref_blocks:
-        must_have.append("projected_point")
-    if "projected_circle_average" in ref_blocks:
-        must_have.append("projected_circle_average")
-    if "vp" in ref_blocks:
-        must_have.append("vp")
+    # Compare every block that exists in refs.
+    for k, ref_blk in ref_blocks.items():
+        if k in ("vp_table", "vp_table_intrinsic"):
+            continue
 
-    for k in must_have:
         assert k in new_blocks, f"Missing block '{k}' in new output"
-        _assert_block_close(new_blocks[k], ref_blocks[k])
+        _assert_block_close(new_blocks[k], ref_blk)
 
+    # Compare nested VP tables (projected)
     if "vp_table" in ref_blocks:
         assert "vp_table" in new_blocks
         for iproj, ref_tbl in ref_blocks["vp_table"].items():
             assert iproj in new_blocks["vp_table"]
             _assert_block_close(new_blocks["vp_table"][iproj], ref_tbl)
 
+    # Compare nested VP tables (intrinsic)
+    if "vp_table_intrinsic" in ref_blocks:
+        assert "vp_table_intrinsic" in new_blocks
+        for icomp, ref_tbl in ref_blocks["vp_table_intrinsic"].items():
+            assert icomp in new_blocks["vp_table_intrinsic"]
+            _assert_block_close(new_blocks["vp_table_intrinsic"][icomp], ref_tbl)
 
-# -----------------------------
-# Tests
-# -----------------------------
+
+def _ref_path(ref_dir: Path, *, average: bool, algorithm: int, kinematics: str) -> Path:
+    stem = "avg" if average else "point"
+    return ref_dir / f"{kinematics}_{stem}_alg{algorithm}_ref.txt"
+
+
+def _require_ref(ref_path: Path):
+    if ref_path.exists():
+        return
+
+    msg = (
+        f"Missing reference file: {ref_path}\n"
+        "Generate/refresh refs by running:\n"
+        "  python tests/make_vprofile_refs.py\n"
+        "and commit the resulting tests/data/*_ref.txt files."
+    )
+
+    # Fail on CI, skip locally.
+    if os.environ.get("CI"):
+        raise AssertionError(msg)
+    pytest.skip(msg)
+
 
 @pytest.mark.parametrize("algorithm", [1, 2, 3])
-def test_projected_point_smoke(scalefree_exe, tmp_path, algorithm, ref_dir):
-    res = _run_case(
-        scalefree_exe,
-        average=False,
-        workdir=tmp_path,
-        algorithm=algorithm,
-        kinematics="projected",
-    )
-    blocks = res.blocks
-
-    _assert_projected_contract(blocks, average=False)
-    _assert_vp_contract(blocks)
-
-    if STRICT:
-        ref_path = _ref_path(ref_dir, average=False, algorithm=algorithm)
-        _skip_if_missing_ref(ref_path)
-        ref_blocks = parse_scalefree_output(ref_path.read_text(encoding="utf-8", errors="replace"))
-        _compare_outputs(blocks, ref_blocks)
-
-
-@pytest.mark.parametrize("algorithm", [1, 2, 3])
-def test_projected_average_smoke(scalefree_exe, tmp_path, algorithm, ref_dir):
-    res = _run_case(
-        scalefree_exe,
-        average=True,
-        workdir=tmp_path,
-        algorithm=algorithm,
-        kinematics="projected",
-    )
-    blocks = res.blocks
-
-    _assert_projected_contract(blocks, average=True)
-    _assert_vp_contract(blocks)
-
-    if STRICT:
-        ref_path = _ref_path(ref_dir, average=True, algorithm=algorithm)
-        _skip_if_missing_ref(ref_path)
-        ref_blocks = parse_scalefree_output(ref_path.read_text(encoding="utf-8", errors="replace"))
-        _compare_outputs(blocks, ref_blocks)
-
-
 @pytest.mark.parametrize("average", [False, True])
-def test_intrinsic_smoke(scalefree_exe, tmp_path, average):
+@pytest.mark.parametrize("kinematics", ["intrinsic", "projected"])
+def test_vprofile_regression(
+    scalefree_exe,
+    ref_dir,
+    tmp_path,
+    algorithm,
+    average,
+    kinematics,
+):
     res = _run_case(
         scalefree_exe,
         average=average,
         workdir=tmp_path,
-        algorithm=3,            # algorithm irrelevant for intrinsic moments; choose a stable default
-        kinematics="intrinsic",
+        algorithm=algorithm,
+        kinematics=kinematics,
     )
-    blocks = res.blocks
-    _assert_intrinsic_contract(blocks, average=average)
+    new_blocks = res.blocks
 
-    # Ensure projected-only blocks are not leaking into intrinsic-only mode
-    assert not any(k.startswith("projected") for k in blocks.keys())
-    assert "vp" not in blocks
-    assert "vp_table" not in blocks
+    ref_path = _ref_path(ref_dir, average=average, algorithm=algorithm, kinematics=kinematics)
+    _require_ref(ref_path)
+
+    ref_blocks = parse_scalefree_output(ref_path.read_text(encoding="utf-8", errors="replace"))
+    _compare_outputs(new_blocks, ref_blocks)
+
+    # Guardrail: VP blocks should not be empty when present
+    for vp_key in ("vp", "vp_intrinsic"):
+        if vp_key in ref_blocks:
+            assert new_blocks[vp_key]["data"].size > 0, f"{vp_key} block is empty"
+
+
+@pytest.mark.parametrize("algorithm", [1, 2, 3])
+@pytest.mark.parametrize("average", [False, True])
+def test_vprofile_regression_both_optional(
+    scalefree_exe,
+    ref_dir,
+    tmp_path,
+    algorithm,
+    average,
+    include_both,
+):
+    if not include_both:
+        pytest.skip("Optional: set SCALEFREE_TEST_INCLUDE_BOTH=1 to enable kinematics='both' regression")
+
+    res = _run_case(
+        scalefree_exe,
+        average=average,
+        workdir=tmp_path,
+        algorithm=algorithm,
+        kinematics="both",
+    )
+    new_blocks = res.blocks
+
+    ref_path = _ref_path(ref_dir, average=average, algorithm=algorithm, kinematics="both")
+    _require_ref(ref_path)
+
+    ref_blocks = parse_scalefree_output(ref_path.read_text(encoding="utf-8", errors="replace"))
+    _compare_outputs(new_blocks, ref_blocks)

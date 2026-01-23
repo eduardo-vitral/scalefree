@@ -398,6 +398,99 @@ C
           WRITE (iout,*) ' '
         END DO
 C
+C
+C If iwhat=0 or 2, then calculate and write also intrinsic VP information
+C (reconstructed from intrinsic moments of the selected velocity component)
+C
+CCCCCCCCCCCCCCCCCCCC
+C
+      ELSE IF ((iwhat.EQ.0).OR.(iwhat.EQ.2)) THEN
+C
+C Set the number of GH moments to calculate
+C
+        nord = 6
+C
+C Verbose ?
+C
+        WRITE (*,*) 'Give verbose output of intermediate steps'
+        WRITE (*,*) 'for VP calculation ? (0/1)'
+        READ (*,*) iverb
+        WRITE (*,*) ' '
+C
+C For intrinsic VPs we interpret iproj as the intrinsic component:
+C   1 = v_r, 2 = v_theta, 3 = v_phi
+C
+        IF (iwhat.EQ.0) THEN
+C
+C Structured intrinsic moments at (r=1, theta)
+C
+          rho_int  = RHOVELMOM(theta,0,0,0)
+          vphi_int = RHOVELMOM(theta,0,0,1) / rho_int
+          vr2_int  = RHOVELMOM(theta,2,0,0) / rho_int
+          vth2_int = RHOVELMOM(theta,0,2,0) / rho_int
+          vphi2_int= RHOVELMOM(theta,0,0,2) / rho_int
+C
+          WRITE (iout,'(A)') '# kind=intrinsic_point'
+          WRITE (iout,'(A)') '# columns: rho vphi vr2 vth2 vphi2'
+          WRITE (iout,'(5E24.16)') rho_int, vphi_int, vr2_int,
+     &                             vth2_int, vphi2_int
+        ELSE
+C
+C Structured intrinsic moments: mass-weighted spherical shell average
+C
+          rho_int  = RHOVELMOMTHAV(0,0,0)
+          vphi_int = RHOVELMOMTHAV(0,0,1) / rho_int
+          vr2_int  = RHOVELMOMTHAV(2,0,0) / rho_int
+          vth2_int = RHOVELMOMTHAV(0,2,0) / rho_int
+          vphi2_int= RHOVELMOMTHAV(0,0,2) / rho_int
+          betav    = 1.0D0 - ((vth2_int+vphi2_int)/(2.0D0*vr2_int))
+C
+          WRITE (iout,'(A)') '# kind=intrinsic_shell_average'
+          WRITE (iout,'(A)') '# columns: rho vphi vr2 vth2 vphi2 beta'
+          WRITE (iout,'(6E24.16)') rho_int, vphi_int, vr2_int,
+     &                             vth2_int, vphi2_int, betav
+        END IF
+C
+C Calculate the VP and VP coefficients for all intrinsic components
+C
+        WRITE (iout,'(A)') '# kind=vp_intrinsic'
+        WRITE (iout,'(A)') '# columns: icomp true_gam true_V true_sig'
+        WRITE (iout,'(A)') '#          gauss_gam gauss_V gauss_sig'
+        WRITE (iout,'(A)') '#         h0 h1 h2 h3 h4 h5 h6'
+C
+        DO iproj=1,3
+          IF (xlam.LT.0.0) THEN
+            IF (iwhat.EQ.0) THEN
+              ang = theta
+            ELSE
+              ang = 0.0D0
+            END IF
+            CALL VPANALYSE_CONV (iwhat,ang,nord,xmom,gam0,V0,sig0,darr,
+     &                      velar,vpval,nvel,gam,Vgau,sig,harr)
+          ELSE
+            IF (iwhat.EQ.0) THEN
+              ang = theta
+            ELSE
+              ang = 0.0D0
+            END IF
+            CALL VPANALYSE_FIX (iwhat,ang,maxord,xmom,gam0,V0,sig0,darr,
+     &                      velar,vpval,nvel,gam,Vgau,sig,harr)
+          END IF
+C
+          WRITE (iout,'(I3,1X,6E24.16,1X,7F10.5)') iproj, gam0, V0, sig0,
+     &            gam, Vgau, sig, harr(0), harr(1), harr(2), harr(3),
+     &            harr(4), harr(5), harr(6)
+C
+C Write the VP solution as a table block (v, VP)
+C
+          WRITE (iout,'(A,I3)') '# vp_table icomp ', iproj
+          WRITE (iout,'(A)') '# columns: v vp'
+          DO j=1,nvel
+            WRITE (iout,'(2E24.16)') velar(j), vpval(j)
+          END DO
+          WRITE (iout,*) ' '
+        END DO
+C
       END IF
 C      
 CCCCCCCCCCCCCCCCCCCC
@@ -594,6 +687,8 @@ C
 C
 C ipot=1 for Kepler potential and ipot=2 for logarithmic potential
 C
+      COMMON /projcase/ iproj
+C
       COMMON /verbose/ iverb
 C
 C Determines whether verbose output should be generated for VP calculations
@@ -613,14 +708,41 @@ C
           WRITE (*,*) ' '
       END IF
 C
-      rhopr0 = RHOPROJMOMAV(0)
-      DO i=0,nord
-        IF (iwhat.EQ.1) THEN   
+      IF (iwhat.EQ.1) THEN
+        rhopr0 = RHOPROJMOMAV(0)
+        DO i=0,nord
           xmom(i) = PROJMOM(xi,i)
-        ELSE IF (iwhat.EQ.3) THEN    
+        END DO
+      ELSE IF (iwhat.EQ.3) THEN
+        rhopr0 = RHOPROJMOMAV(0)
+        DO i=0,nord
           xmom(i) = RHOPROJMOMAV(i) / rhopr0
-        END IF
-      END DO
+        END DO
+      ELSE IF (iwhat.EQ.0) THEN
+        rho0 = RHOVELMOM(xi,0,0,0)
+        xmom(0) = 1.0D0
+        DO i=1,nord
+          IF (iproj.EQ.1) THEN
+            xmom(i) = RHOVELMOM(xi,i,0,0) / rho0
+          ELSE IF (iproj.EQ.2) THEN
+            xmom(i) = RHOVELMOM(xi,0,i,0) / rho0
+          ELSE
+            xmom(i) = RHOVELMOM(xi,0,0,i) / rho0
+          END IF
+        END DO
+      ELSE IF (iwhat.EQ.2) THEN
+        rho0 = RHOVELMOMTHAV(0,0,0)
+        xmom(0) = 1.0D0
+        DO i=1,nord
+          IF (iproj.EQ.1) THEN
+            xmom(i) = RHOVELMOMTHAV(i,0,0) / rho0
+          ELSE IF (iproj.EQ.2) THEN
+            xmom(i) = RHOVELMOMTHAV(0,i,0) / rho0
+          ELSE
+            xmom(i) = RHOVELMOMTHAV(0,0,i) / rho0
+          END IF
+        END DO
+      END IF
 C
 C Calculate the normalization, mean and dispersion
 C
@@ -630,9 +752,9 @@ C
 C
 C Set initial values for the best fitting Gaussian
 C
-      gam  = gam0 - (gam0*darr(4)*SQRT(24.0D0)/32.0D0)
-      Vgau = V0 - (sig0*darr(3)*SQRT(6.0D0)/4.0D0)
-      sig  = sig0 - (sig0*darr(4)*SQRT(24.0D0)/8.0D0)
+      gam  = gam0
+      Vgau = V0
+      sig  = sig0
 C
 C Calculate the VP, best fitting Gaussian, and Gauss-Hermite coefficients.
 C
@@ -696,6 +818,8 @@ C
 C
 C ipot=1 for Kepler potential and ipot=2 for logarithmic potential
 C
+      COMMON /projcase/ iproj
+C
       COMMON /verbose/ iverb
 C
 C Determines whether verbose output should be generated for VP calculations
@@ -704,14 +828,40 @@ CCCCCCCCC
 C
 C Calculate the lowest order moments
 C
-      rhopr0 = RHOPROJMOMAV(0)
-      DO i=0,2
-        IF (iwhat.EQ.1) THEN   
+      IF (iwhat.EQ.1) THEN
+        DO i=0,2
           xmom(i) = PROJMOM(xi,i)
-        ELSE IF (iwhat.EQ.3) THEN    
+        END DO
+      ELSE IF (iwhat.EQ.3) THEN
+        rhopr0 = RHOPROJMOMAV(0)
+        DO i=0,2
           xmom(i) = RHOPROJMOMAV(i) / rhopr0
-        END IF
-      END DO
+        END DO
+      ELSE IF (iwhat.EQ.0) THEN
+        rho0 = RHOVELMOM(xi,0,0,0)
+        xmom(0) = 1.0D0
+        DO i=1,2
+          IF (iproj.EQ.1) THEN
+            xmom(i) = RHOVELMOM(xi,i,0,0) / rho0
+          ELSE IF (iproj.EQ.2) THEN
+            xmom(i) = RHOVELMOM(xi,0,i,0) / rho0
+          ELSE
+            xmom(i) = RHOVELMOM(xi,0,0,i) / rho0
+          END IF
+        END DO
+      ELSE IF (iwhat.EQ.2) THEN
+        rho0 = RHOVELMOMTHAV(0,0,0)
+        xmom(0) = 1.0D0
+        DO i=1,2
+          IF (iproj.EQ.1) THEN
+            xmom(i) = RHOVELMOMTHAV(i,0,0) / rho0
+          ELSE IF (iproj.EQ.2) THEN
+            xmom(i) = RHOVELMOMTHAV(0,i,0) / rho0
+          ELSE
+            xmom(i) = RHOVELMOMTHAV(0,0,i) / rho0
+          END IF
+        END DO
+      END IF
 C
 C Calculate the normalization, mean and dispersion
 C
@@ -721,9 +871,9 @@ C
 C
 C Set initial values for the best fitting Gaussian
 C
-      gam  = gam0 - (gam0*darr(4)*SQRT(24.0D0)/32.0D0)
-      Vgau = V0 - (sig0*darr(3)*SQRT(6.0D0)/4.0D0)
-      sig  = sig0 - (sig0*darr(4)*SQRT(24.0D0)/8.0D0)
+      gam  = gam0
+      Vgau = V0
+      sig  = sig0
 C
 C Now calculate all moments up to order minord. The choice 
 C for minord is based on the criterium that delv (see FINDVP below)
@@ -757,6 +907,22 @@ C
           xmom(i) = PROJMOM(xi,i)
         ELSE IF (iwhat.EQ.3) THEN    
           xmom(i) = RHOPROJMOMAV(i) / rhopr0
+        ELSE IF (iwhat.EQ.0) THEN
+          IF (iproj.EQ.1) THEN
+            xmom(i) = RHOVELMOM(xi,i,0,0) / rho0
+          ELSE IF (iproj.EQ.2) THEN
+            xmom(i) = RHOVELMOM(xi,0,i,0) / rho0
+          ELSE
+            xmom(i) = RHOVELMOM(xi,0,0,i) / rho0
+          END IF
+        ELSE IF (iwhat.EQ.2) THEN
+          IF (iproj.EQ.1) THEN
+            xmom(i) = RHOVELMOMTHAV(i,0,0) / rho0
+          ELSE IF (iproj.EQ.2) THEN
+            xmom(i) = RHOVELMOMTHAV(0,i,0) / rho0
+          ELSE
+            xmom(i) = RHOVELMOMTHAV(0,0,i) / rho0
+          END IF
         END IF
       END DO
 C

@@ -345,7 +345,8 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
 
     Recognizes:
       - "# kind=XYZ" blocks with optional "# columns: ..." line
-      - "# vp_table iproj X" blocks with optional "# columns: ..." line
+      - "# kind=vp" and "# kind=vp_intrinsic" blocks (with embedded vp_table sub-blocks)
+      - "# vp_table iproj X" and "# vp_table icomp X" blocks with optional "# columns: ..." line
     """
     lines = [ln.rstrip("\n") for ln in text.splitlines()]
     blocks: Dict[str, Any] = {}
@@ -405,8 +406,9 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
                     break
                 data.append([_to_float(x) for x in row.split()])
                 i += 1
-
-            blocks.setdefault("vp_table", {})[iproj] = {
+            label = parts[2].lower() if len(parts) >= 3 else "iproj"
+            vp_table_key = "vp_table_intrinsic" if label == "icomp" else "vp_table"
+            blocks.setdefault(vp_table_key, {})[iproj] = {
                 "columns": cols if cols else ["v", "vp"],
                 "data": np.array(data, dtype=float),
             }
@@ -427,13 +429,13 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
         # interleaves additional VP summary rows with vp_table sub-blocks.
         # Only the first row is preceded by '# kind=vp'; subsequent rows (iproj=2,3,...)
         # appear later as numeric lines with many columns (while vp_table rows have only 2).
-        if kind == "vp":
+        if kind in ("vp", "vp_intrinsic"):
             data = []
             while i < len(lines):
                 row = lines[i].strip()
 
                 # End of vp block when a new '# kind=' begins (different kind)
-                if row.startswith("# kind=") and not row.startswith("# kind=vp"):
+                if row.startswith("# kind=") and not row.startswith(f"# kind={kind}"):
                     break
 
                 # Skip blanks
@@ -462,7 +464,8 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
                         tdata.append([_to_float(x) for x in r2.split()])
                         i += 1
 
-                    blocks.setdefault("vp_table", {})[iproj] = {
+                    vp_table_key = "vp_table" if kind == "vp" else "vp_table_intrinsic"
+                    blocks.setdefault(vp_table_key, {})[iproj] = {
                         "columns": tcols if tcols else ["v", "vp"],
                         "data": np.array(tdata, dtype=float),
                     }
@@ -503,15 +506,20 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
 
             block: Dict[str, Any] = {"columns": cols_norm, "data": arr}
 
-            if cols_norm and cols_norm[0].lower() == "iproj" and arr.shape[0] > 0:
-                by_iproj: Dict[int, Dict[str, float]] = {}
-                for r in arr:
-                    ip = int(r[0])
-                    by_iproj[ip] = {
-                        cols_norm[j]: r[j]
-                        for j in range(min(len(cols_norm), len(r)))
-                    }
-                block["by_iproj"] = by_iproj
+            if cols_norm and arr.shape[0] > 0:
+                first = cols_norm[0].lower()
+                if first in ("iproj", "icomp"):
+                    by_id: Dict[int, Dict[str, float]] = {}
+                    for r in arr:
+                        idx = int(r[0])
+                        by_id[idx] = {
+                            cols_norm[j]: r[j]
+                            for j in range(min(len(cols_norm), len(r)))
+                        }
+                    if first == "iproj":
+                        block["by_iproj"] = by_id
+                    else:
+                        block["by_icomp"] = by_id
 
             blocks[kind] = block
             continue
@@ -972,7 +980,11 @@ class ScaleFreeRunner:
 
                 intrinsic_raw = ""
                 if want_intr:
-                    intrinsic_raw = _extract_last_intrinsic_block_from_stdout(stdout_text)
+                    if ('intrinsic_point' not in blocks) and ('intrinsic_shell_average' not in blocks):
+                        intrinsic_raw = _extract_last_intrinsic_block_from_stdout(stdout_text)
+                    else:
+                        intrinsic_raw = ""
+
                     if intrinsic_raw.strip():
                         iblocks = parse_scalefree_output(intrinsic_raw)
                         # Should be exactly one kind, but we merge defensively
@@ -985,12 +997,20 @@ class ScaleFreeRunner:
 
                 if not want_proj:
                     # Intrinsic-only: strip projected outputs if present
-                    blocks = {k: v for k, v in blocks.items() if k.startswith("intrinsic")}
+                    blocks = {
+                        k: v
+                        for k, v in blocks.items()
+                        if k.startswith("intrinsic") or k in ("vp_intrinsic", "vp_table_intrinsic")
+                    }
                     raw = intrinsic_raw if intrinsic_raw.strip() else raw
 
                 if not want_intr:
                     # Projected-only: strip intrinsic outputs if present
-                    blocks = {k: v for k, v in blocks.items() if not k.startswith("intrinsic")}
+                    blocks = {
+                        k: v
+                        for k, v in blocks.items()
+                        if (not k.startswith("intrinsic")) and k not in ("vp_intrinsic", "vp_table_intrinsic")
+                    }
 
                 if not blocks:
                     raise RuntimeError(
@@ -1023,48 +1043,44 @@ class ScaleFreeRunner:
                     stderr=stderr_text,
                 )
 
-            # (B) Otherwise, prefer structured blocks from stdout (Option A)
+            # (B) Parse structured output from the file first (authoritative)
+            raw_file = None
+            blocks_file: Dict[str, Any] = {}
+            if out_path.exists():
+                raw_file = out_path.read_text(encoding="utf-8", errors="replace")
+                if debug_prompts:
+                    print("\n--- Fortran structured output (from file) ---")
+                    print(raw_file, end="" if raw_file.endswith("\n") else "\n")
+                blocks_file = parse_scalefree_output(raw_file)
+
+            # (C) Also parse any structured blocks present in STDOUT (may be partial)
             raw_stdout_struct = _extract_structured_from_stdout(stdout_text)
+            blocks_stdout: Dict[str, Any] = {}
             if raw_stdout_struct.strip():
                 if debug_prompts:
                     print("\n--- Fortran structured output (from stdout structured blocks) ---")
                     print(raw_stdout_struct, end="" if raw_stdout_struct.endswith("\n") else "\n")
-                blocks = parse_scalefree_output(raw_stdout_struct)
-                blocks, raw_stdout_struct = _finalize_blocks(blocks, raw_stdout_struct)
-                if blocks:
-                    return ScaleFreeResult(
-                        blocks=blocks,
-                        raw_text=raw_stdout_struct,
-                        output_path=(
-                            None
-                            if delete_after
-                            else (out_path if persist_file else None)
-                        ),
-                        stdout=stdout_text,
-                        stderr=stderr_text,
-                    )
+                blocks_stdout = parse_scalefree_output(raw_stdout_struct)
 
-            # (C) Fallback: if a file exists (temp or explicit), parse it
-            if out_path.exists():
-                raw = out_path.read_text(encoding="utf-8", errors="replace")
-                if debug_prompts:
-                    print("\n--- Fortran structured output (from file fallback) ---")
-                    print(raw, end="" if raw.endswith("\n") else "\n")
-                blocks = parse_scalefree_output(raw)
-                blocks, raw = _finalize_blocks(blocks, raw)
+            # Merge (prefer file blocks; fill gaps with stdout blocks)
+            blocks = dict(blocks_file)
+            for k, v in blocks_stdout.items():
+                blocks.setdefault(k, v)
+
+            base_raw = raw_file if raw_file is not None else raw_stdout_struct
+            blocks, base_raw = _finalize_blocks(blocks, base_raw)
+
+            if blocks:
                 return ScaleFreeResult(
                     blocks=blocks,
-                    raw_text=raw,
+                    raw_text=base_raw,
                     output_path=out_path if persist_file else None,
                     stdout=stdout_text,
                     stderr=stderr_text,
                 )
 
-            # (D) Legacy fallback flag (kept, but typically redundant now)
-            if parse_stdout_fallback:
-                if debug_prompts:
-                    print("\n--- Fortran structured output (from stdout structured blocks fallback) ---")
-                    print(raw_stdout_struct, end="" if raw_stdout_struct.endswith("\n") else "\n")
+            # (D) Legacy fallback flag (kept for backward compatibility)
+            if parse_stdout_fallback and raw_stdout_struct.strip():
                 blocks = parse_scalefree_output(raw_stdout_struct)
                 blocks, raw_stdout_struct = _finalize_blocks(blocks, raw_stdout_struct)
                 return ScaleFreeResult(

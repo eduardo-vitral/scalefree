@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 import shutil
 import subprocess
 
@@ -12,22 +13,25 @@ def repo_root() -> Path:
 
 
 @pytest.fixture(scope="session")
-def scalefree_exe(tmp_path_factory) -> Path:
-    """
-    Provide the path to the ScaleFree Fortran executable.
+def scalefree_exe() -> Path:
+    """Provide path to the ScaleFree Fortran executable.
 
     Behaviour:
       - If fortran_src/scalefree.e exists -> use it.
-      - Else, if gfortran is available,
-      compile scalefree.f into a session tmp dir.
-      - Else, skip tests that depend on the executable.
+      - Else, compile fortran_src/scalefree.f into scalefree.e (requires gfortran).
+      - If gfortran is not available -> skip tests that require the executable.
+
+    Notes:
+      - CI runners are typically clean, so compilation will happen there.
+      - Locally, you may already have a built executable.
     """
+
     root = repo_root()
-    prebuilt = root / "fortran_src" / "scalefree.e"
+    exe = root / "fortran_src" / "scalefree.e"
     src = root / "fortran_src" / "scalefree.f"
 
-    if prebuilt.exists():
-        return prebuilt
+    if exe.exists():
+        return exe
 
     if not src.exists():
         pytest.skip(f"Missing Fortran source at {src}")
@@ -36,12 +40,8 @@ def scalefree_exe(tmp_path_factory) -> Path:
     if not gfortran:
         pytest.skip(
             "gfortran not available, cannot build ScaleFree executable. "
-            "Install gfortran (e.g. apt-get install gfortran) "
-            "or commit a prebuilt fortran_src/scalefree.e."
+            "Install gfortran (e.g. apt-get install gfortran) or provide a prebuilt fortran_src/scalefree.e."
         )
-
-    build_dir = tmp_path_factory.mktemp("scalefree_build")
-    exe = build_dir / "scalefree.e"
 
     cmd = [
         gfortran,
@@ -70,23 +70,25 @@ def scalefree_exe(tmp_path_factory) -> Path:
         ) from e
 
     if not exe.exists():
-        raise RuntimeError(
-            f"Compilation reported success, but executable not found at {exe}",
-        )
+        raise RuntimeError(f"Compilation reported success, but executable not found at {exe}")
 
     return exe
 
 
 @pytest.fixture(scope="session")
 def ref_dir() -> Path:
-    """
-    Directory holding golden reference outputs.
-
-    Used only when SCALEFREE_STRICT_TESTS=1.
-    """
+    """Directory holding golden reference outputs."""
     d = repo_root() / "tests" / "data"
     if not d.exists():
-        # Do not skip: strict-mode tests will skip per-file if missing.
-        # Keep fixture available.
-        return d
+        pytest.skip("Missing tests/data directory. Generate refs with: python tests/make_vprofile_refs.py")
     return d
+
+
+@pytest.fixture(scope="session")
+def include_both() -> bool:
+    """Whether to include the optional kinematics='both' regression cases.
+
+    Enabled by setting environment variable:
+      SCALEFREE_TEST_INCLUDE_BOTH=1
+    """
+    return os.environ.get("SCALEFREE_TEST_INCLUDE_BOTH", "0") == "1"
