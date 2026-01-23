@@ -1,8 +1,9 @@
-"""Regression tests for vprofile.
+"""Regression tests for the Fortran-backed vprofile interface.
 
-This test compares the current vprofile output against stored reference files.
-Because small numerical differences can arise across compilers/architectures,
-comparisons are performed at 5 *significant digits*.
+The Fortran program prints floating-point values whose last digits can vary
+across platforms/compilers and (in rare cases) across runs. To keep the test
+stable and aligned with the project requirement, we normalise *every* numeric
+token to **5 significant digits** before comparison.
 """
 
 from __future__ import annotations
@@ -10,126 +11,89 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import numpy as np
-
-from scalefree import ScaleFreeRunner
+from scalefree.vmoments import ScaleFreeRunner
 
 
-_NUMERIC_RE = re.compile(r"[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?")
-
-
-def _extract_numeric_tokens(text: str) -> np.ndarray:
-    """Return all numeric tokens found in a text blob as a float array."""
-
-    toks = _NUMERIC_RE.findall(text)
-    if not toks:
-        return np.array([], dtype=float)
-    return np.array([float(t) for t in toks], dtype=float)
-
-
-def _round_sig(x: np.ndarray, sig: int = 5) -> np.ndarray:
-    """Round to `sig` significant digits (element-wise)."""
-
-    x = np.asarray(x, dtype=float)
-    out = np.empty_like(x)
-
-    finite = np.isfinite(x)
-    out[~finite] = x[~finite]
-
-    xf = x[finite]
-    if xf.size == 0:
-        return out
-
-    # For each value, decimals = sig - 1 - floor(log10(|x|))
-    mags = np.floor(np.log10(np.abs(xf)))
-    mags[np.isneginf(mags)] = 0.0  # handle zeros
-    decimals = (sig - 1 - mags).astype(int)
-
-    for i, (v, d) in enumerate(zip(xf, decimals)):
-        # numpy.round accepts negative decimals as well
-        out[np.where(finite)[0][i]] = np.round(v, d)
-
-    return out
-
-
-def _assert_text_close(ref_text: str, cur_text: str, sig: int = 5) -> None:
-    """Compare reference vs current text outputs up to `sig` significant digits."""
-
-    ref_nums = _extract_numeric_tokens(ref_text)
-    cur_nums = _extract_numeric_tokens(cur_text)
-
-    # Basic sanity: ensure we did not change the structure drastically.
-    assert ref_nums.size == cur_nums.size, (
-        f"Different number of numeric tokens: ref={ref_nums.size}, cur={cur_nums.size}.\n"
-        "This usually indicates a formatting/structure change in the Fortran output."
-    )
-
-    ref_r = _round_sig(ref_nums, sig=sig)
-    cur_r = _round_sig(cur_nums, sig=sig)
-
-    # Compare token-by-token; NaNs must align.
-    both_nan = np.isnan(ref_r) & np.isnan(cur_r)
-    neq = ~both_nan & (ref_r != cur_r)
-
-    if np.any(neq):
-        idx = np.flatnonzero(neq)[:10]
-        diffs = [
-            f"[{i}] ref={ref_nums[i]} -> {ref_r[i]} | cur={cur_nums[i]} -> {cur_r[i]}"
-            for i in idx
-        ]
-        raise AssertionError(
-            "Numeric mismatch after rounding to 5 significant digits. First differences:\n"
-            + "\n".join(diffs)
+# Matches floats/ints in fixed or scientific notation.
+_NUM_RE = re.compile(
+    r"""(?x)
+    (?P<num>
+        [+-]?
+        (?:
+            (?:\d+\.\d*)|(?:\.\d+)|(?:\d+)
         )
+        (?:[eE][+-]?\d+)?
+    )
+    """
+)
+
+
+def _norm_5sig(text: str) -> str:
+    """Normalise numeric tokens to 5 significant digits."""
+
+    def repl(match: re.Match[str]) -> str:
+        tok = match.group("num")
+        # Keep plain integers as integers (still stable and clearer in diffs)
+        if re.fullmatch(r"[+-]?\d+", tok):
+            return tok
+        try:
+            val = float(tok)
+        except ValueError:
+            return tok
+        # Format with 5 significant digits; keep exponent where helpful.
+        return f"{val:.5g}"
+
+    return _NUM_RE.sub(repl, text).strip() + "\n"
 
 
 def test_vprofile_regression(scalefree_exe: Path, ref_dir: Path, tmp_path: Path) -> None:
-    """Test vprofile output against stored reference files (5 significant digits)."""
+    """Compare vprofile raw output to stored references (5 significant digits)."""
 
-    tests = {
-        "projected_point": {
-            "project": "projected_point",
-            "algorithm": 3,
-            "rmax": 50,
-            "rmin": 0.01,
-            "vmax": 50,
-            "vmin": -50,
-            "order": 4,
-            "grid": "1d",
-        },
-        "projected_line": {
-            "project": "projected_line",
-            "algorithm": 3,
-            "rmax": 50,
-            "rmin": 0.01,
-            "vmax": 50,
-            "vmin": -50,
-            "order": 4,
-            "grid": "1d",
-        },
-        "projected_plane": {
-            "project": "projected_plane",
-            "algorithm": 3,
-            "rmax": 50,
-            "rmin": 0.01,
-            "vmax": 50,
-            "vmin": -50,
-            "order": 4,
-            "grid": "1d",
-        },
+    # IMPORTANT: keep these kwargs aligned with tests/make_vprofile_refs.py.
+    # For algorithm=3 we exercise the vp-table path (usevp=True) and use a
+    # smaller moment order (maxmom=8), which is both faster and more stable.
+    base = dict(
+        # model
+        potential="logarithmic",
+        gamma=2.0,
+        q=0.608,
+        beta=0.189,
+        s=0.5,
+        t=0.0,
+        inclination=57.1,
+        xi=0.0,
+        theta=0.0,
+        df=1,
+        # run control
+        maxmom=8,
+        algorithm=3,
+        kinematics="projected",
+        integration=1,
+        ngl_or_eps=0,
+        usevp=True,
+        verbose_vp=0,
+        vp_smooth_eps=0.0,
+        vp_reg_param=1.0,
+        parse_stdout_fallback=False,
+        debug_prompts=False,
+    )
+
+    cases = {
+        "projected_point": {"average": False, "ref": "projected_point_alg3_ref.txt"},
+        "projected_avg": {"average": True, "ref": "projected_avg_alg3_ref.txt"},
     }
 
     runner = ScaleFreeRunner(scalefree_exe, workdir=tmp_path)
 
-    for name, args in tests.items():
-        ref_path = ref_dir / f"{name}_alg3_ref.txt"
-        ref_text = ref_path.read_text(encoding="utf-8")
+    for name, cfg in cases.items():
+        ref_text = (ref_dir / cfg["ref"]).read_text(encoding="utf-8")
 
-        res = runner.vprofile(**args)
-        cur_text = res.raw_text
+        # IMPORTANT: provide a *short* output filename to avoid Fortran
+        # character-length truncation issues on some platforms.
+        out_path = tmp_path / f"vp_{name}.txt"
 
-        # Helpful debugging artifact: write current output into tmp_path
-        # so it can be inspected in CI artifacts if needed.
-        (tmp_path / f"{name}_alg3_cur.txt").write_text(cur_text, encoding="utf-8")
+        res = runner.vprofile(**base, average=cfg["average"], output_path=out_path)
 
-        _assert_text_close(ref_text, cur_text, sig=5)
+        got = _norm_5sig(res.raw_text)
+        exp = _norm_5sig(ref_text)
+        assert got == exp

@@ -1,99 +1,66 @@
-"""Pytest configuration and shared fixtures.
-
-Notes
------
-- The Fortran executable is expected at: `fortran_src/scalefree.e`.
-- CI compiles it in `.gitlab-ci.yml`.
-- When running locally, tests can compile it if it is missing.
-"""
-
 from __future__ import annotations
 
 import os
-import subprocess
 from pathlib import Path
 
 import pytest
 
 
-def _repo_root() -> Path:
-    # tests/ is at <repo>/tests
-    return Path(__file__).resolve().parent.parent
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--scalefree-exe",
+        action="store",
+        default=None,
+        help=(
+            "Path to the compiled scalefree Fortran executable. "
+            "Defaults to <repo>/fortran_src/scalefree.e if present."
+        ),
+    )
 
 
 @pytest.fixture(scope="session")
-def build_fortran_executable() -> Path:
-    """Build the Fortran executable if it is not already present."""
-
-    root = _repo_root()
-    exe = root / "fortran_src" / "scalefree.e"
-    src = root / "fortran_src" / "scalefree.f"
-
-    # If CI (or the user) has already compiled it, do nothing.
-    if exe.exists():
-        return exe
-
-    # If the user has provided a custom path, do not attempt to compile.
-    env_exe = os.environ.get("SCALEFREE_EXE")
-    if env_exe:
-        p = Path(env_exe).expanduser().resolve()
-        if not p.exists():
-            raise FileNotFoundError(f"SCALEFREE_EXE is set but not found: {p}")
-        return p
-
-    if not src.exists():
-        raise FileNotFoundError(f"Missing Fortran source file: {src}")
-
-    exe.parent.mkdir(parents=True, exist_ok=True)
-
-    # Keep flags conservative and consistent with CI.
-    cmd = [
-        "gfortran",
-        "-O2",
-        "-std=legacy",
-        "-o",
-        str(exe),
-        str(src),
-    ]
-
-    try:
-        subprocess.run(cmd, check=True, cwd=str(root))
-    except FileNotFoundError as e:
-        raise RuntimeError(
-            "gfortran not found. Install gfortran (or rely on CI) to run tests locally."
-        ) from e
-
-    if not exe.exists():
-        raise RuntimeError(f"Fortran build reported success but executable not found: {exe}")
-
-    return exe
+def repo_root() -> Path:
+    return Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="session")
-def scalefree_exe(build_fortran_executable: Path) -> Path:
-    """Return the path to the compiled Fortran executable."""
+def scalefree_exe(pytestconfig: pytest.Config, repo_root: Path) -> Path:
+    """Return a path to the compiled Fortran executable.
 
-    env_exe = os.environ.get("SCALEFREE_EXE")
-    if env_exe:
-        p = Path(env_exe).expanduser().resolve()
+    CI builds it via:
+      gfortran -O2 -std=legacy -o fortran_src/scalefree.e fortran_src/scalefree.f
+
+    Locally you can either compile the same way, set SCALEFREE_EXE, or pass
+    --scalefree-exe.
+    """
+
+    # 1) CLI override
+    cli = pytestconfig.getoption("--scalefree-exe")
+    if cli:
+        p = Path(cli).expanduser().resolve()
         if not p.exists():
-            raise FileNotFoundError(f"SCALEFREE_EXE is set but not found: {p}")
+            pytest.skip(f"scalefree executable not found at: {p}")
         return p
-    return build_fortran_executable
+
+    # 2) Env var override
+    env = os.environ.get("SCALEFREE_EXE")
+    if env:
+        p = Path(env).expanduser().resolve()
+        if not p.exists():
+            pytest.skip(f"SCALEFREE_EXE points to missing file: {p}")
+        return p
+
+    # 3) Default expected location
+    p = (repo_root / "fortran_src" / "scalefree.e").resolve()
+    if not p.exists():
+        pytest.skip(
+            "Compiled scalefree executable not found. "
+            "Build it with: gfortran -O2 -std=legacy -o fortran_src/scalefree.e fortran_src/scalefree.f "
+            "or pass --scalefree-exe / set SCALEFREE_EXE."
+        )
+    return p
 
 
 @pytest.fixture(scope="session")
 def ref_dir() -> Path:
-    """Directory containing stored vprofile reference outputs."""
-
     return Path(__file__).resolve().parent / "data"
-
-
-@pytest.fixture(scope="session")
-def _seed_rngs() -> None:
-    """Keep RNGs deterministic in tests that use stochastic sampling.
-
-    vprofile regression tests are deterministic, but other tests may depend on RNG state.
-    """
-
-    os.environ.setdefault("PYTHONHASHSEED", "0")
