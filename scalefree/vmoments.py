@@ -345,8 +345,10 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
 
     Recognizes:
       - "# kind=XYZ" blocks with optional "# columns: ..." line
-      - "# kind=vp" and "# kind=vp_intrinsic" blocks (with embedded vp_table sub-blocks)
-      - "# vp_table iproj X" and "# vp_table icomp X" blocks with optional "# columns: ..." line
+      - "# kind=vp" and "# kind=vp_intrinsic" blocks
+      (with embedded vp_table sub-blocks)
+      - "# vp_table iproj X" and "# vp_table icomp X"
+      blocks with optional "# columns: ..." line
     """
     lines = [ln.rstrip("\n") for ln in text.splitlines()]
     blocks: Dict[str, Any] = {}
@@ -372,8 +374,14 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
             return []
         # Strip leading '#', keep the remainder.
         tail = s[1:].strip()
-        # If it looks like a new header or marker, do not treat as continuation.
-        if (not tail) or (":" in tail) or tail.startswith("kind=") or tail.startswith("vp_table"):
+        # If it looks like a new header or marker,
+        # do not treat as continuation.
+        if (
+            (not tail)
+            or (":" in tail)
+            or tail.startswith("kind=")
+            or tail.startswith("vp_table")
+        ):
             return []
         toks = tail.split()
         if toks and all(_COLNAME_RE.match(t) for t in toks):
@@ -425,17 +433,22 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
                 cols += parse_columns_continuation(lines[i])
             i += 1
 
-        # Special handling for the VP summary block: the modified Fortran output
+        # Special handling for the VP summary block:
+        # the modified Fortran output
         # interleaves additional VP summary rows with vp_table sub-blocks.
-        # Only the first row is preceded by '# kind=vp'; subsequent rows (iproj=2,3,...)
-        # appear later as numeric lines with many columns (while vp_table rows have only 2).
+        # Only the first row is preceded by '# kind=vp';
+        # subsequent rows (iproj=2,3,...)
+        # appear later as numeric lines with many columns
+        # (while vp_table rows have only 2).
         if kind in ("vp", "vp_intrinsic"):
             data = []
             while i < len(lines):
                 row = lines[i].strip()
 
                 # End of vp block when a new '# kind=' begins (different kind)
-                if row.startswith("# kind=") and not row.startswith(f"# kind={kind}"):
+                if row.startswith("# kind=") and not row.startswith(
+                    f"# kind={kind}",
+                ):
                     break
 
                 # Skip blanks
@@ -477,7 +490,8 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
                     continue
 
                 toks = row.split()
-                # vp summary rows are wide (>2); vp_table rows are 2 columns and are
+                # vp summary rows are wide (>2);
+                # vp_table rows are 2 columns and are
                 # handled above after their '# vp_table' marker.
                 if len(toks) > 2:
                     data.append([_to_float(x) for x in toks])
@@ -486,10 +500,14 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
             arr = (
                 np.array(data, dtype=float)
                 if data
-                else np.empty((0, 0), dtype=float)
+                else np.empty(
+                    (0, 0),
+                    dtype=float,
+                )
             )
 
-            # Defensive: ensure the header width matches the numeric table width.
+            # Defensive: ensure the header width matches
+            # the numeric table width.
             if cols is None:
                 cols_norm: List[str] = []
             else:
@@ -556,7 +574,9 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
             if len(cols_norm) > n_data_cols:
                 cols_norm = cols_norm[:n_data_cols]
             elif len(cols_norm) < n_data_cols:
-                cols_norm = cols_norm + [f"col{j+1}" for j in range(len(cols_norm), n_data_cols)]
+                cols_norm = cols_norm + [
+                    f"col{j+1}" for j in range(len(cols_norm), n_data_cols)
+                ]
 
         block: Dict[str, Any] = {"columns": cols_norm, "data": arr}
 
@@ -632,8 +652,13 @@ def _extract_structured_from_stdout(stdout_text: str) -> str:
 # ---------------------------------------------------------------------
 
 _INTRINSIC_SHELL_MARK = "Mass-weighted average spherical shell"
-_INTRINSIC_HDR_RE = re.compile(r"\brho\b.*<v_ph>.*<v_r\^2>.*<v_th\^2>.*<v_ph\^2>", re.IGNORECASE)
-_FLOAT_RE = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][+-]?\d+)?|[+-]?(?:\d+(?:\.\d*)?|\.\d+)[+-]\d{2,4}")
+_INTRINSIC_HDR_RE = re.compile(
+    r"\brho\b.*<v_ph>.*<v_r\^2>.*<v_th\^2>.*<v_ph\^2>", re.IGNORECASE
+)
+_FLOAT_RE = re.compile(
+    r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][+-]?\d+)"
+    + r"?|[+-]?(?:\d+(?:\.\d*)?|\.\d+)[+-]\d{2,4}"
+)
 
 
 def _extract_last_intrinsic_block_from_stdout(stdout_text: str) -> str:
@@ -701,7 +726,11 @@ def _extract_last_intrinsic_block_from_stdout(stdout_text: str) -> str:
         vals = vals[:5]
 
     # Synthetic structured block understood by parse_scalefree_output()
-    out = [f"# kind={kind}", "# columns: " + " ".join(cols), "  " + "  ".join(_fmt(v) for v in vals)]
+    out = [
+        f"# kind={kind}",
+        "# columns: " + " ".join(cols),
+        "  " + "  ".join(_fmt(v) for v in vals),
+    ]
     return "\n".join(out) + "\n"
 
 
@@ -755,7 +784,8 @@ class ScaleFreeRunner:
         vp_reg_param: float = 1.0,
         # Only used when algorithm==2 (fixed regularization strength)
         vp_smooth_eps: float = 0.0,
-        # Only used when algorithm==3 (VP smoothness factor; 0.0 => Fortran default)
+        # Only used when algorithm==3
+        # (VP smoothness factor; 0.0 => Fortran default)
         maxmom: int = 4,
         average: bool = False,
         kinematics: Union[str, int] = "projected",
@@ -839,13 +869,17 @@ class ScaleFreeRunner:
         def _norm_kinematics(k: Union[str, int]) -> Tuple[str, Optional[int]]:
             """
             Returns (mode, iwhat_single)
-              - mode == "single": run exactly one calculation with iwhat_single in {0,1,2,3}
-              - mode == "both"  : run intrinsic then projected (legacy behavior)
+              - mode == "single": run exactly one calculation with
+              iwhat_single in {0,1,2,3}
+              - mode == "both"  : run intrinsic then projected
+              (legacy behavior)
             """
             if isinstance(k, (int, np.integer)):
                 iw = int(k)
                 if iw not in (0, 1, 2, 3):
-                    raise ValueError("kinematics int must be one of {0,1,2,3}.")
+                    raise ValueError(
+                        "kinematics int must be one of {0,1,2,3}.",
+                    )
                 return ("single", iw)
 
             key = str(k).strip().lower()
@@ -857,7 +891,8 @@ class ScaleFreeRunner:
                 return ("both", None)
 
             raise ValueError(
-                "kinematics must be 'projected', 'intrinsic', 'both', or an int in {0,1,2,3}."
+                "kinematics must be 'projected', 'intrinsic', "
+                "'both', or an int in {0,1,2,3}."
             )
 
         mode, iwhat_single = _norm_kinematics(kinematics)
@@ -869,7 +904,8 @@ class ScaleFreeRunner:
             iwhat_intr = 0
             iwhat_proj = 1
 
-        phase = {"step": 0}  # 0 intrinsic, 1 projected (only when mode == "both")
+        phase = {"step": 0}
+        # 0 intrinsic, 1 projected (only when mode == "both")
 
         def respond(line: str) -> Optional[str]:
             for key, val in answers.items():
@@ -879,7 +915,13 @@ class ScaleFreeRunner:
             # iwhat prompt
             if "Calculate intrinsic (0) or projected (1)" in line:
                 if mode == "both":
-                    return str(iwhat_intr) if phase["step"] == 0 else str(iwhat_proj)
+                    return (
+                        str(
+                            iwhat_intr,
+                        )
+                        if phase["step"] == 0
+                        else str(iwhat_proj)
+                    )
                 assert iwhat_single is not None
                 return str(iwhat_single)
 
@@ -911,7 +953,8 @@ class ScaleFreeRunner:
                 return "0"
 
             return None
-# ---------------------------------------------------------
+
+        # ---------------------------------------------------------
         # Run Fortran interactively
         # ---------------------------------------------------------
         p = subprocess.Popen(
@@ -958,12 +1001,16 @@ class ScaleFreeRunner:
                     f"STDOUT (first 2000 chars):\n{stdout_text[:2000]}\n"
                 )
 
-            def _finalize_blocks(blocks_in: Dict[str, Any], raw_in: str) -> Tuple[Dict[str, Any], str]:
+            def _finalize_blocks(
+                blocks_in: Dict[str, Any], raw_in: str
+            ) -> Tuple[Dict[str, Any], str]:
                 """
                 Post-process parsed blocks according to requested kinematics:
                   - projected-only: keep projected blocks
-                  - intrinsic-only: return only intrinsic blocks parsed from STDOUT text tables
-                  - both: merge intrinsic blocks (from STDOUT) with projected blocks (from structured output)
+                  - intrinsic-only: return only intrinsic blocks
+                  parsed from STDOUT text tables
+                  - both: merge intrinsic blocks (from STDOUT)
+                  with projected blocks (from structured output)
                 """
                 want_intr = False
                 want_proj = False
@@ -980,8 +1027,12 @@ class ScaleFreeRunner:
 
                 intrinsic_raw = ""
                 if want_intr:
-                    if ('intrinsic_point' not in blocks) and ('intrinsic_shell_average' not in blocks):
-                        intrinsic_raw = _extract_last_intrinsic_block_from_stdout(stdout_text)
+                    if ("intrinsic_point" not in blocks) and (
+                        "intrinsic_shell_average" not in blocks
+                    ):
+                        intrinsic_raw = _extract_last_intrinsic_block_from_stdout(
+                            stdout_text
+                        )
                     else:
                         intrinsic_raw = ""
 
@@ -990,7 +1041,8 @@ class ScaleFreeRunner:
                         # Should be exactly one kind, but we merge defensively
                         for k, v in iblocks.items():
                             blocks[k] = v
-                        # Preserve provenance in raw_text for debugging/regression tests
+                        # Preserve provenance in raw_text for
+                        # debugging/regression tests
                         if raw and not raw.endswith("\n"):
                             raw += "\n"
                         raw += intrinsic_raw
@@ -1000,7 +1052,8 @@ class ScaleFreeRunner:
                     blocks = {
                         k: v
                         for k, v in blocks.items()
-                        if k.startswith("intrinsic") or k in ("vp_intrinsic", "vp_table_intrinsic")
+                        if k.startswith("intrinsic")
+                        or k in ("vp_intrinsic", "vp_table_intrinsic")
                     }
                     raw = intrinsic_raw if intrinsic_raw.strip() else raw
 
@@ -1009,14 +1062,18 @@ class ScaleFreeRunner:
                     blocks = {
                         k: v
                         for k, v in blocks.items()
-                        if (not k.startswith("intrinsic")) and k not in ("vp_intrinsic", "vp_table_intrinsic")
+                        if (not k.startswith("intrinsic"))
+                        and k not in ("vp_intrinsic", "vp_table_intrinsic")
                     }
 
                 if not blocks:
                     raise RuntimeError(
-                        "Fortran returned success but no parsable output was detected. "
-                        "If you requested intrinsic quantities, note that intrinsic tables "
-                        "are printed to STDOUT and must match the expected header format."
+                        "Fortran returned success but no "
+                        "parsable output was detected. "
+                        "If you requested intrinsic quantities, "
+                        "note that intrinsic tables "
+                        "are printed to STDOUT and must match "
+                        "the expected header format."
                     )
 
                 return blocks, raw
@@ -1047,19 +1104,32 @@ class ScaleFreeRunner:
             raw_file = None
             blocks_file: Dict[str, Any] = {}
             if out_path.exists():
-                raw_file = out_path.read_text(encoding="utf-8", errors="replace")
+                raw_file = out_path.read_text(
+                    encoding="utf-8",
+                    errors="replace",
+                )
                 if debug_prompts:
                     print("\n--- Fortran structured output (from file) ---")
-                    print(raw_file, end="" if raw_file.endswith("\n") else "\n")
+                    print(
+                        raw_file,
+                        end="" if raw_file.endswith("\n") else "\n",
+                    )
                 blocks_file = parse_scalefree_output(raw_file)
 
-            # (C) Also parse any structured blocks present in STDOUT (may be partial)
+            # (C) Also parse any structured blocks present in STDOUT
+            # (may be partial)
             raw_stdout_struct = _extract_structured_from_stdout(stdout_text)
             blocks_stdout: Dict[str, Any] = {}
             if raw_stdout_struct.strip():
                 if debug_prompts:
-                    print("\n--- Fortran structured output (from stdout structured blocks) ---")
-                    print(raw_stdout_struct, end="" if raw_stdout_struct.endswith("\n") else "\n")
+                    print(
+                        "\n--- Fortran structured output"
+                        " (from stdout structured blocks) ---"
+                    )
+                    print(
+                        raw_stdout_struct,
+                        end="" if raw_stdout_struct.endswith("\n") else "\n",
+                    )
                 blocks_stdout = parse_scalefree_output(raw_stdout_struct)
 
             # Merge (prefer file blocks; fill gaps with stdout blocks)
@@ -1082,7 +1152,10 @@ class ScaleFreeRunner:
             # (D) Legacy fallback flag (kept for backward compatibility)
             if parse_stdout_fallback and raw_stdout_struct.strip():
                 blocks = parse_scalefree_output(raw_stdout_struct)
-                blocks, raw_stdout_struct = _finalize_blocks(blocks, raw_stdout_struct)
+                blocks, raw_stdout_struct = _finalize_blocks(
+                    blocks,
+                    raw_stdout_struct,
+                )
                 return ScaleFreeResult(
                     blocks=blocks,
                     raw_text=raw_stdout_struct,

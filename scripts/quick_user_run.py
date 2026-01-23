@@ -58,6 +58,7 @@ def _print_vp_summary_block(block_name: str, blk: dict):
             print(f"\n{block_name}: parsed index -> row mapping ({by_key})")
             for kk in sorted(by.keys()):
                 row = by[kk]
+
                 def _fmt(x):
                     # Accept numbers or numeric strings; fall back to str
                     try:
@@ -65,6 +66,7 @@ def _print_vp_summary_block(block_name: str, blk: dict):
                         return f"{xf:.16g}"
                     except Exception:
                         return str(x)
+
                 print(f"  {kk}: " + " ".join(_fmt(x) for x in row))
 
 
@@ -150,8 +152,10 @@ def run_case(
 def main():
     p = argparse.ArgumentParser(
         description=(
-            "Local smoke tests for scalefree.vmoments kinematics modes, including VP diagnostics.\n\n"
-            "This script exercises: intrinsic/projected/both × point/average, and prints VP blocks if enabled."
+            "Local smoke tests for scalefree.vmoments kinematics modes,"
+            " including VP diagnostics.\n\n"
+            "This script exercises: intrinsic/projected/both × point/average,"
+            " and prints VP blocks if enabled."
         ),
     )
     p.add_argument(
@@ -184,7 +188,8 @@ def main():
         help=(
             "Path to Fortran backend executable. "
             "If it does not exist, scalefree will compile it there. "
-            "If omitted, this script forces a rebuild into <repo>/fortran_src/scalefree_intrvp.e."
+            "If omitted, this script forces a rebuild into "
+            "<repo>/fortran_src/scalefree_intrvp.e."
         ),
     )
     args, _unknown = p.parse_known_args()
@@ -198,8 +203,8 @@ def main():
 
     print("Imported scalefree from:", Path(scalefree.__file__).resolve())
 
-
-    # Force use of a fresh backend build so Fortran changes (e.g., vp_intrinsic)
+    # Force use of a fresh backend build so Fortran changes
+    # (e.g., vp_intrinsic)
     # are definitely picked up even if a cached executable exists.
     if args.exe is None:
         exe_path = repo_root / "fortran_src" / "scalefree_intrvp.e"

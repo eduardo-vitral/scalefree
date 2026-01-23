@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 import os
+import random
 import shutil
 import subprocess
 
+import numpy as np
 import pytest
 
 
@@ -12,83 +14,68 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(scope="session")
-def scalefree_exe() -> Path:
-    """Provide path to the ScaleFree Fortran executable.
+@pytest.fixture(scope="session", autouse=True)
+def _seed_rngs() -> None:
+    """Seed RNGs to reduce test flakiness.
 
-    Behaviour:
-      - If fortran_src/scalefree.e exists -> use it.
-      - Else, compile fortran_src/scalefree.f into scalefree.e (requires gfortran).
-      - If gfortran is not available -> skip tests that require the executable.
+    Tests are intended to be deterministic. If any underlying code path uses
+    randomness (directly or indirectly), we seed both Python's `random` and
+    NumPy's global RNG.
 
-    Notes:
-      - CI runners are typically clean, so compilation will happen there.
-      - Locally, you may already have a built executable.
+    Set SCALEFREE_TEST_SEED to override the default.
     """
+
+    seed_env = os.environ.get("SCALEFREE_TEST_SEED", "0")
+    try:
+        seed = int(seed_env)
+    except ValueError:
+        seed = 0
+
+    random.seed(seed)
+    np.random.seed(seed)
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--build",
+        action="store_true",
+        default=False,
+        help="Build Fortran executable before running tests",
+    )
+
+
+@pytest.fixture(scope="session")
+def build_fortran_executable(pytestconfig):
+    """Optionally build the Fortran executable before tests run."""
+    if not pytestconfig.getoption("--build"):
+        return
 
     root = repo_root()
-    exe = root / "fortran_src" / "scalefree.e"
     src = root / "fortran_src" / "scalefree.f"
-
-    if exe.exists():
-        return exe
+    exe = root / "fortran_src" / "fitvp"
 
     if not src.exists():
-        pytest.skip(f"Missing Fortran source at {src}")
+        raise FileNotFoundError(f"Missing Fortran source: {src}")
 
+    # Use gfortran if available
     gfortran = shutil.which("gfortran")
-    if not gfortran:
-        pytest.skip(
-            "gfortran not available, cannot build ScaleFree executable. "
-            "Install gfortran (e.g. apt-get install gfortran) or provide a prebuilt fortran_src/scalefree.e."
-        )
-
-    cmd = [
-        gfortran,
-        "-O2",
-        "-std=legacy",
-        "-ffixed-line-length-none",
-        "-o",
-        str(exe),
-        str(src),
-    ]
-
-    try:
-        subprocess.run(
-            cmd,
-            cwd=str(src.parent),
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-    except subprocess.CalledProcessError as e:
+    if gfortran is None:
         raise RuntimeError(
-            "Failed to compile ScaleFree Fortran backend.\n"
-            f"Command: {' '.join(cmd)}\n"
-            f"Output:\n{e.stdout}"
-        ) from e
+            "gfortran is required to build the Fortran executable. "
+            "Install gfortran or run tests without --build."
+        )
 
+    cmd = [gfortran, "-O2", "-std=legacy", "-o", str(exe), str(src)]
+    subprocess.check_call(cmd, cwd=str(root))
+
+
+@pytest.fixture(scope="session")
+def scalefree_exe(build_fortran_executable):
+    """Return the path to the fitvp executable, if present."""
+    exe = repo_root() / "fortran_src" / "fitvp"
     if not exe.exists():
-        raise RuntimeError(f"Compilation reported success, but executable not found at {exe}")
-
-    return exe
-
-
-@pytest.fixture(scope="session")
-def ref_dir() -> Path:
-    """Directory holding golden reference outputs."""
-    d = repo_root() / "tests" / "data"
-    if not d.exists():
-        pytest.skip("Missing tests/data directory. Generate refs with: python tests/make_vprofile_refs.py")
-    return d
-
-
-@pytest.fixture(scope="session")
-def include_both() -> bool:
-    """Whether to include the optional kinematics='both' regression cases.
-
-    Enabled by setting environment variable:
-      SCALEFREE_TEST_INCLUDE_BOTH=1
-    """
-    return os.environ.get("SCALEFREE_TEST_INCLUDE_BOTH", "0") == "1"
+        pytest.skip(
+            "Fortran executable 'fitvp' not found. "
+            "Run tests with --build or build it locally."
+        )
+    return str(exe)

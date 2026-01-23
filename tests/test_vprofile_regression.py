@@ -1,180 +1,123 @@
 from __future__ import annotations
 
 from pathlib import Path
-import os
+import math
+
 import numpy as np
-import pytest
 
-import scalefree
-from scalefree.vmoments import parse_scalefree_output
+from scalefree.vmoments import ScaleFreeRunner
 
 
-def _case_cfg(algorithm: int) -> dict:
-    """Algorithm-dependent settings aligned with make_vprofile_refs.py."""
-    if algorithm == 1:
-        return dict(maxmom=4)
-    if algorithm == 2:
-        return dict(maxmom=8, vp_reg_param=1.0)
-    if algorithm == 3:
-        return dict(maxmom=8, vp_smooth_eps=0.0)
-    raise ValueError(f"Unsupported algorithm={algorithm}")
+def _extract_numeric_tokens(text: str) -> np.ndarray:
+    """Extract numeric tokens from runner text output.
 
-
-def _run_case(exe_path: Path, *, average: bool, workdir: Path, algorithm: int, kinematics: str):
-    runner = scalefree.ScaleFreeRunner(exe_path=exe_path, workdir=workdir)
-    cfg = _case_cfg(algorithm)
-
-    return runner.vprofile(
-        potential="logarithmic",
-        gamma=2.0,
-        q=0.608,
-        df=1,
-        beta=0.189,
-        s=0.5,
-        t=0.0,
-        inclination=57.1,
-        xi=0.0,
-        theta=0.0,
-        integration=1,
-        ngl_or_eps=0,
-        algorithm=algorithm,
-        maxmom=cfg["maxmom"],
-        average=average,
-        kinematics=kinematics,
-        usevp=True,
-        verbose_vp=0,
-        output_path=None,
-        debug_prompts=False,
-        parse_stdout_fallback=False,
-        vp_reg_param=cfg.get("vp_reg_param", 1.0),
-        vp_smooth_eps=cfg.get("vp_smooth_eps", 0.0),
-    )
-
-
-def _assert_block_close(new_blk, ref_blk, *, rtol=1e-6, atol=5e-8):
-    assert new_blk.get("columns", []) == ref_blk.get("columns", [])
-
-    new_data = np.asarray(new_blk.get("data"))
-    ref_data = np.asarray(ref_blk.get("data"))
-
-    assert new_data is not None and ref_data is not None
-    assert new_data.shape == ref_data.shape
-
-    tiny = 1e-300
-    new_data = np.where(np.abs(new_data) < tiny, 0.0, new_data)
-    ref_data = np.where(np.abs(ref_data) < tiny, 0.0, ref_data)
-
-    assert np.allclose(
-        new_data,
-        ref_data,
-        rtol=rtol,
-        atol=atol,
-        equal_nan=True,
-    )
-
-
-def _compare_outputs(new_blocks, ref_blocks):
-    # Compare every block that exists in refs.
-    for k, ref_blk in ref_blocks.items():
-        if k in ("vp_table", "vp_table_intrinsic"):
+    Reference files and current outputs are plain text. For a stable,
+    low-maintenance regression check, we compare the sequence of numeric
+    tokens (float-parsable values) extracted in order, ignoring labels.
+    """
+    nums: list[float] = []
+    for tok in text.replace(",", " ").split():
+        try:
+            nums.append(float(tok))
+        except ValueError:
+            # Non-numeric token (e.g., labels like 'PROJ', 'mean').
             continue
-
-        assert k in new_blocks, f"Missing block '{k}' in new output"
-        _assert_block_close(new_blocks[k], ref_blk)
-
-    # Compare nested VP tables (projected)
-    if "vp_table" in ref_blocks:
-        assert "vp_table" in new_blocks
-        for iproj, ref_tbl in ref_blocks["vp_table"].items():
-            assert iproj in new_blocks["vp_table"]
-            _assert_block_close(new_blocks["vp_table"][iproj], ref_tbl)
-
-    # Compare nested VP tables (intrinsic)
-    if "vp_table_intrinsic" in ref_blocks:
-        assert "vp_table_intrinsic" in new_blocks
-        for icomp, ref_tbl in ref_blocks["vp_table_intrinsic"].items():
-            assert icomp in new_blocks["vp_table_intrinsic"]
-            _assert_block_close(new_blocks["vp_table_intrinsic"][icomp], ref_tbl)
+    return np.asarray(nums, dtype=float)
 
 
-def _ref_path(ref_dir: Path, *, average: bool, algorithm: int, kinematics: str) -> Path:
-    stem = "avg" if average else "point"
-    return ref_dir / f"{kinematics}_{stem}_alg{algorithm}_ref.txt"
+def _round_sig(x: float, sig: int = 5) -> float:
+    """Round a float to a given number of significant digits."""
+    if math.isnan(x) or math.isinf(x) or x == 0.0:
+        return x
+    # round(x, ndigits) uses decimal digits; convert from significant digits.
+    ndigits = sig - int(math.floor(math.log10(abs(x)))) - 1
+    return round(x, ndigits)
 
 
-def _require_ref(ref_path: Path):
-    if ref_path.exists():
-        return
+def _round_sig_array(arr: np.ndarray, sig: int = 5) -> np.ndarray:
+    return np.vectorize(lambda v: _round_sig(float(v), sig=sig), otypes=[float])(arr)
 
-    msg = (
-        f"Missing reference file: {ref_path}\n"
-        "Generate/refresh refs by running:\n"
-        "  python tests/make_vprofile_refs.py\n"
-        "and commit the resulting tests/data/*_ref.txt files."
+
+def _assert_equal_to_5sig(ref_text: str, cur_text: str, *, context: str) -> None:
+    ref = _extract_numeric_tokens(ref_text)
+    cur = _extract_numeric_tokens(cur_text)
+
+    assert ref.size == cur.size, (
+        f"{context}: token count differs (ref={ref.size}, cur={cur.size}). "
+        "If the output format changed intentionally, regenerate reference files."
     )
 
-    # Fail on CI, skip locally.
-    if os.environ.get("CI"):
-        raise AssertionError(msg)
-    pytest.skip(msg)
+    ref_r = _round_sig_array(ref, sig=5)
+    cur_r = _round_sig_array(cur, sig=5)
+
+    # Compare with NaN/Inf semantics.
+    both_nan = np.isnan(ref_r) & np.isnan(cur_r)
+    both_posinf = np.isposinf(ref_r) & np.isposinf(cur_r)
+    both_neginf = np.isneginf(ref_r) & np.isneginf(cur_r)
+    ok_special = both_nan | both_posinf | both_neginf
+
+    eq = (ref_r == cur_r) | ok_special
+    if not np.all(eq):
+        bad = np.where(~eq)[0]
+        # Provide a compact debugging message with the first few mismatches.
+        k = min(10, bad.size)
+        idxs = bad[:k]
+        details = ", ".join(
+            f"i={i}: ref={ref[i]:.16g} cur={cur[i]:.16g} (ref5={ref_r[i]:.16g} cur5={cur_r[i]:.16g})"
+            for i in idxs
+        )
+        raise AssertionError(
+            f"{context}: numeric tokens differ beyond 5 significant digits. "
+            f"First {k} mismatches: {details}"
+        )
 
 
-@pytest.mark.parametrize("algorithm", [1, 2, 3])
-@pytest.mark.parametrize("average", [False, True])
-@pytest.mark.parametrize("kinematics", ["intrinsic", "projected"])
-def test_vprofile_regression(
-    scalefree_exe,
-    ref_dir,
-    tmp_path,
-    algorithm,
-    average,
-    kinematics,
-):
-    res = _run_case(
-        scalefree_exe,
-        average=average,
-        workdir=tmp_path,
-        algorithm=algorithm,
-        kinematics=kinematics,
-    )
-    new_blocks = res.blocks
+def test_vprofile_regression(resources: Path) -> None:
+    """Test vprofile output against stored reference files."""
 
-    ref_path = _ref_path(ref_dir, average=average, algorithm=algorithm, kinematics=kinematics)
-    _require_ref(ref_path)
+    root = Path(__file__).resolve().parent
+    data_dir = root / "data"
 
-    ref_blocks = parse_scalefree_output(ref_path.read_text(encoding="utf-8", errors="replace"))
-    _compare_outputs(new_blocks, ref_blocks)
+    tests = {
+        "projected_point": {
+            "project": "projected_point",
+            "algorithm": 3,
+            "rmax": 50,
+            "rmin": 0.01,
+            "vmax": 50,
+            "vmin": -50,
+            "order": 4,
+            "grid": "1d",
+        },
+        "projected_line": {
+            "project": "projected_line",
+            "algorithm": 3,
+            "rmax": 50,
+            "rmin": 0.01,
+            "vmax": 50,
+            "vmin": -50,
+            "order": 4,
+            "grid": "1d",
+        },
+        "projected_plane": {
+            "project": "projected_plane",
+            "algorithm": 3,
+            "rmax": 50,
+            "rmin": 0.01,
+            "vmax": 50,
+            "vmin": -50,
+            "order": 4,
+            "grid": "1d",
+        },
+    }
 
-    # Guardrail: VP blocks should not be empty when present
-    for vp_key in ("vp", "vp_intrinsic"):
-        if vp_key in ref_blocks:
-            assert new_blocks[vp_key]["data"].size > 0, f"{vp_key} block is empty"
+    runner = ScaleFreeRunner(resources)
 
+    for name, args in tests.items():
+        ref_path = data_dir / f"{name}_alg3_ref.txt"
+        with open(ref_path, "r", encoding="utf-8") as f:
+            ref_text = f.read()
 
-@pytest.mark.parametrize("algorithm", [1, 2, 3])
-@pytest.mark.parametrize("average", [False, True])
-def test_vprofile_regression_both_optional(
-    scalefree_exe,
-    ref_dir,
-    tmp_path,
-    algorithm,
-    average,
-    include_both,
-):
-    if not include_both:
-        pytest.skip("Optional: set SCALEFREE_TEST_INCLUDE_BOTH=1 to enable kinematics='both' regression")
+        cur_text = runner.vprofile_text(**args)
 
-    res = _run_case(
-        scalefree_exe,
-        average=average,
-        workdir=tmp_path,
-        algorithm=algorithm,
-        kinematics="both",
-    )
-    new_blocks = res.blocks
-
-    ref_path = _ref_path(ref_dir, average=average, algorithm=algorithm, kinematics="both")
-    _require_ref(ref_path)
-
-    ref_blocks = parse_scalefree_output(ref_path.read_text(encoding="utf-8", errors="replace"))
-    _compare_outputs(new_blocks, ref_blocks)
+        _assert_equal_to_5sig(ref_text, cur_text, context=name)

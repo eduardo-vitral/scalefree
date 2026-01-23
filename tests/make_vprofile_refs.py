@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import argparse
-import os
+import math
 from pathlib import Path
 import shutil
 import subprocess
+
+import numpy as np
 
 import scalefree
 
@@ -72,12 +74,47 @@ def ref_name(*, kinematics: str, average: bool, algorithm: int) -> str:
     return f"{kinematics}_{stem}_alg{algorithm}_ref.txt"
 
 
+def _extract_numeric_tokens(text: str) -> np.ndarray:
+    nums: list[float] = []
+    for tok in text.replace(",", " ").split():
+        try:
+            nums.append(float(tok))
+        except ValueError:
+            continue
+    return np.asarray(nums, dtype=float)
+
+
+def _round_sig(x: float, sig: int = 5) -> float:
+    if math.isnan(x) or math.isinf(x) or x == 0.0:
+        return x
+    return round(x, sig - int(math.floor(math.log10(abs(x)))) - 1)
+
+
+def _compare_texts(ref_text: str, new_text: str, sig: int = 5) -> tuple[bool, str]:
+    a = _extract_numeric_tokens(ref_text)
+    b = _extract_numeric_tokens(new_text)
+
+    if a.shape != b.shape:
+        return False, f"shape mismatch: ref has {a.size} nums, new has {b.size} nums"
+
+    for i, (ra, rb) in enumerate(zip(a, b)):
+        if math.isnan(ra) and math.isnan(rb):
+            continue
+        if math.isinf(ra) and math.isinf(rb) and (ra > 0) == (rb > 0):
+            continue
+        if _round_sig(float(ra), sig) != _round_sig(float(rb), sig):
+            return False, f"diff at index {i}: ref={ra} new={rb} (sig={sig})"
+
+    return True, "match"
+
+
 def main() -> int:
     p = argparse.ArgumentParser(
         description=(
             "Generate/update golden reference outputs under tests/data/.\n\n"
-            "Run this locally after changing Fortran output or the Python parser, "
-            "then commit the updated *_ref.txt files."
+            "Default behaviour is to compare the newly-generated outputs against the\n"
+            "existing *_ref.txt files up to 5 significant digits. Use --overwrite\n"
+            "to replace the reference files."
         )
     )
     p.add_argument(
@@ -89,6 +126,11 @@ def main() -> int:
         "--include-both",
         action="store_true",
         help="Also generate references for kinematics='both' (optional).",
+    )
+    p.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Overwrite existing *_ref.txt files with newly-generated outputs.",
     )
 
     args = p.parse_args()
@@ -107,6 +149,8 @@ def main() -> int:
     kinematics_list = ["intrinsic", "projected"]
     if args.include_both:
         kinematics_list.append("both")
+
+    any_mismatch = False
 
     for algorithm in (1, 2, 3):
         cfg = case_cfg(algorithm)
@@ -143,12 +187,32 @@ def main() -> int:
                     average=average,
                     algorithm=algorithm,
                 )
-                pth.write_text(res.raw_text, encoding="utf-8")
-                print(f"Wrote {pth.relative_to(root)}")
 
-    print("Done. Commit the updated tests/data/*_ref.txt files.")
+                if pth.exists() and not args.overwrite:
+                    ok, msg = _compare_texts(pth.read_text(encoding="utf-8"), res.raw_text, sig=5)
+                    if ok:
+                        print(f"OK   {pth.relative_to(root)}")
+                    else:
+                        any_mismatch = True
+                        cand = pth.with_name(pth.stem + "_candidate" + pth.suffix)
+                        cand.write_text(res.raw_text, encoding="utf-8")
+                        print(f"DIFF {pth.relative_to(root)} -> wrote {cand.relative_to(root)} ({msg})")
+                else:
+                    pth.write_text(res.raw_text, encoding="utf-8")
+                    print(f"Wrote {pth.relative_to(root)}")
+
+    if args.overwrite:
+        print("Done. Commit the updated tests/data/*_ref.txt files.")
+    else:
+        if any_mismatch:
+            print("\nOne or more references differed at 5 significant digits.")
+            print("Review the *_candidate.txt files; if changes are intended, re-run with --overwrite and commit.")
+            return 2
+        print("\nAll references match at 5 significant digits.")
+
     if args.include_both:
         print("Note: 'both' references are optional; enable tests with SCALEFREE_TEST_INCLUDE_BOTH=1")
+
     return 0
 
 
