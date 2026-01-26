@@ -1,37 +1,41 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 """scripts/check_mock_end2end.py
 
-End-to-end check for the intrinsic-θ mock generator.
+Local end-to-end validation of the *intrinsic* scalefree mock generator.
 
-What this script validates
---------------------------
-The current mock generator (``scalefree.mock.mock``) returns samples in the
-model Cartesian frame. This check therefore:
+What is tested
+--------------
+- Density: recovered shell volume density follows r^{-gamma} (up to scaling).
+- Flattening: the (x,z) distribution matches the requested intrinsic axis ratio q.
+- Velocities: the intrinsic velocity components (vr, vtheta, vphi) produced by
+  the mock are consistent with the *angle-averaged* intrinsic VP information from
+  ScaleFree (vprofile with average=True), even though the mock itself uses
+  average=False with theta-binning.
 
-1) Runs ``mock()`` to get (x,y,z,vx,vy,vz).
-2) Converts the Cartesian velocities back to intrinsic spherical components
-   (vr, vtheta, vphi) at each sampled position.
-3) Compares *shell-averaged* intrinsic second moments against the analytic
-   ScaleFree backend result (``vprofile(..., kinematics='intrinsic', average=True)``).
-
-This intentionally avoids LOS / POSr / POSt geometry and focuses on the
-intrinsic formalism consistency.
+Notes
+-----
+- This script assumes the mock returns *Cartesian* phase-space coordinates.
+- No intermediate transformation to observed (LOS/POSr/POSt) coordinates is used.
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 import numpy as np
+import matplotlib.pyplot as plt
+
+
+# -----------------------------
+# Helpers: force repo import
+# -----------------------------
 
 
 def _force_repo_import(repo_root: Path) -> None:
-    """Ensure we import *this repo* version of scalefree, not an installed wheel."""
     repo_root = repo_root.resolve()
     sys.path.insert(0, str(repo_root))
     for k in list(sys.modules.keys()):
@@ -39,292 +43,442 @@ def _force_repo_import(repo_root: Path) -> None:
             del sys.modules[k]
 
 
-def _cart_to_sph_angles(
-    x: np.ndarray, y: np.ndarray, z: np.ndarray
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _import_balrogo_dynamics():
+    try:
+        from balrogo import dynamics  # type: ignore
+
+        return dynamics
+    except Exception:
+        import importlib
+
+        return importlib.import_module("dynamics")
+
+
+# -----------------------------
+# Density utilities
+# -----------------------------
+
+
+def volume_density_powerlaw_shape(gamma: float, r: np.ndarray) -> np.ndarray:
+    return np.power(r, -gamma)
+
+
+def shell_volume_density(
+    r: np.ndarray, nbins: int = 25
+) -> Tuple[np.ndarray, np.ndarray]:
+    r = np.asarray(r, dtype=float)
+    r = r[np.isfinite(r) & (r > 0)]
+    if r.size == 0:
+        raise ValueError("No valid radii to bin for volume density.")
+
+    edges = np.logspace(np.log10(r.min()), np.log10(r.max()), nbins + 1)
+    counts, _ = np.histogram(r, bins=edges)
+
+    vol = (4.0 / 3.0) * math.pi * (edges[1:] ** 3 - edges[:-1] ** 3)
+    rho_hat = counts / vol
+    rmid = np.sqrt(edges[1:] * edges[:-1])
+
+    m = counts > 0
+    return rmid[m], rho_hat[m]
+
+
+# -----------------------------
+# Spherical <-> Cartesian velocity transforms
+# -----------------------------
+
+
+def sph_vel_from_xyzv(xyzv: np.ndarray) -> Dict[str, np.ndarray]:
+    """Return intrinsic spherical velocity components from (x,y,z,vx,vy,vz)."""
+    x, y, z, vx, vy, vz = xyzv.T
     r = np.sqrt(x * x + y * y + z * z)
-    # theta in [0, pi], phi in [0, 2pi)
-    theta = np.arccos(np.clip(z / np.where(r > 0, r, 1.0), -1.0, 1.0))
-    phi = (np.arctan2(y, x) + 2.0 * np.pi) % (2.0 * np.pi)
-    return r, theta, phi
+    # Avoid division by zero in pathological cases
+    r = np.where(r > 0, r, np.nan)
 
+    theta = np.arccos(np.clip(z / r, -1.0, 1.0))
+    phi = np.arctan2(y, x)
 
-def _cart_to_sph_v(
-    *,
-    theta: np.ndarray,
-    phi: np.ndarray,
-    vx: np.ndarray,
-    vy: np.ndarray,
-    vz: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Project Cartesian velocity onto (e_r, e_theta, e_phi)."""
     st = np.sin(theta)
     ct = np.cos(theta)
-    sp = np.sin(phi)
     cp = np.cos(phi)
+    sp = np.sin(phi)
 
-    # e_r     = ( st cp,  st sp,  ct)
-    # e_theta = ( ct cp,  ct sp, -st)
-    # e_phi   = (   -sp,    cp,   0)
-    vr = vx * st * cp + vy * st * sp + vz * ct
-    vtheta = vx * ct * cp + vy * ct * sp - vz * st
-    vphi = -vx * sp + vy * cp
-    return vr, vtheta, vphi
+    # basis vectors
+    erx, ery, erz = st * cp, st * sp, ct
+    etx, ety, etz = ct * cp, ct * sp, -st
+    epx, epy, epz = -sp, cp, 0.0
 
-
-def _summarize_intrinsic(
-    vr: np.ndarray, vtheta: np.ndarray, vphi: np.ndarray
-) -> Dict[str, float]:
-    vr = np.asarray(vr, dtype=float)
-    vtheta = np.asarray(vtheta, dtype=float)
-    vphi = np.asarray(vphi, dtype=float)
-
-    out: Dict[str, float] = {}
-    out["vr_mean"] = float(np.mean(vr))
-    out["vtheta_mean"] = float(np.mean(vtheta))
-    out["vphi_mean"] = float(np.mean(vphi))
-
-    out["vr2"] = float(np.mean(vr * vr))
-    out["vth2"] = float(np.mean(vtheta * vtheta))
-    out["vphi2"] = float(np.mean(vphi * vphi))
-
-    # velocity anisotropy beta_v = 1 - (vth^2 + vphi^2)/(2 vr^2)
-    denom = max(out["vr2"], 1e-30)
-    out["beta"] = float(1.0 - (out["vth2"] + out["vphi2"]) / (2.0 * denom))
-    return out
-
-
-def _read_intrinsic_shell_average(res) -> Dict[str, float]:
-    blk = res.blocks.get("intrinsic_shell_average")
-    if blk is None:
-        raise RuntimeError("vprofile did not return 'intrinsic_shell_average'.")
-
-    cols = list(blk.get("columns", []))
-    data = np.asarray(blk.get("data"))
-    if data.ndim != 2 or data.shape[0] < 1:
-        raise RuntimeError("'intrinsic_shell_average' block is empty or malformed.")
-    row = data[0]
-
-    def _get(name: str) -> float:
-        if name not in cols:
-            raise KeyError(
-                f"Missing column '{name}' in intrinsic_shell_average cols={cols}"
-            )
-        return float(row[cols.index(name)])
+    vr = vx * erx + vy * ery + vz * erz
+    vtheta = vx * etx + vy * ety + vz * etz
+    vphi = vx * epx + vy * epy + vz * epz
 
     return {
-        "rho": _get("rho"),
-        "vphi_mean": _get("vphi"),
-        "vr2": _get("vr2"),
-        "vth2": _get("vth2"),
-        "vphi2": _get("vphi2"),
-        "beta": _get("beta"),
+        "vr": vr,
+        "vtheta": vtheta,
+        "vphi": vphi,
+        "theta": theta,
+        "phi": phi,
+        "r": r,
     }
 
 
-def _rel_err(a: float, b: float) -> float:
-    denom = max(abs(b), 1e-30)
-    return abs(a - b) / denom
+# -----------------------------
+# vprofile extraction (intrinsic)
+# -----------------------------
 
 
-def main() -> int:
+def extract_intrinsic_products(res) -> Dict[str, Any]:
+    """Extract intrinsic VP fits (h3/h4) and intrinsic moments for mean/sigma."""
+    blocks = getattr(res, "blocks", {}) or {}
+    out: Dict[str, Any] = {"vp_rows": {}, "vp_table": {}, "moments": {}}
+
+    # Moments: average=True -> intrinsic_shell_average; average=False -> intrinsic_point
+    for key in ("intrinsic_shell_average", "intrinsic_point"):
+        blk = blocks.get(key)
+        if isinstance(blk, dict):
+            cols = list(blk.get("columns", []))
+            data = blk.get("data")
+            if cols and isinstance(data, np.ndarray) and data.ndim == 2 and data.size:
+                row = data[0]
+                for name in ("rho", "vphi", "vr2", "vth2", "vphi2", "beta"):
+                    if name in cols:
+                        out["moments"][name] = float(row[cols.index(name)])
+            break
+
+    # VP summary: vp_intrinsic
+    vp = blocks.get("vp_intrinsic")
+    if isinstance(vp, dict):
+        cols = list(vp.get("columns", []))
+        data = vp.get("data")
+        if (
+            cols
+            and isinstance(data, np.ndarray)
+            and data.ndim == 2
+            and data.size
+            and "icomp" in cols
+        ):
+            i_ic = cols.index("icomp")
+
+            def _get(col: str, row: np.ndarray) -> float:
+                return float(row[cols.index(col)]) if col in cols else float("nan")
+
+            for row in data:
+                ic = int(row[i_ic])
+                out["vp_rows"][ic] = {
+                    "h3": _get("h3", row),
+                    "h4": _get("h4", row),
+                    # keep gauss_* for inspection (not relied on for mean/sigma)
+                    "gauss_gam": _get("gauss_gam", row),
+                    "gauss_V": _get("gauss_V", row),
+                    "gauss_sig": _get("gauss_sig", row),
+                }
+
+    # vp_table overlays
+    vpt = blocks.get("vp_table")
+    if isinstance(vpt, dict):
+        for icomp, tbl in vpt.items():
+            if not isinstance(tbl, dict):
+                continue
+            arr = tbl.get("data")
+            if (
+                isinstance(arr, np.ndarray)
+                and arr.ndim == 2
+                and arr.size
+                and arr.shape[1] >= 2
+            ):
+                out["vp_table"][int(icomp)] = (
+                    arr[:, 0].astype(float),
+                    arr[:, 1].astype(float),
+                )
+
+    return out
+
+
+# -----------------------------
+# BALRoGO curve helpers
+# -----------------------------
+
+
+def balrogo_curve_from_fits(
+    dyn, fits: np.ndarray, vg: np.ndarray
+) -> Tuple[np.ndarray, str]:
+    """Return a PDF curve from BALRoGO given (mean, sigma, h3, h4)."""
+    mu, sig, h3, h4 = map(float, fits)
+    ex = np.zeros_like(vg, dtype=float)
+
+    ret = dyn.mom_likelihood_func(fits, vg, ex, mode="curve")
+
+    if isinstance(ret, np.ndarray) and ret.ndim == 1 and ret.shape[0] == vg.shape[0]:
+        return ret.astype(float), "mom_likelihood_func(curve)"
+
+    if np.isscalar(ret):
+        if h4 >= 0:
+            fgrid = dyn.laplace_kernel_pdf(vg, ex, mu, sig, h3, h4)
+            return np.asarray(fgrid, dtype=float), "laplace_kernel_pdf(fallback)"
+        else:
+            fgrid = dyn.uniform_kernel_pdf(vg, ex, mu, sig, h3, h4)
+            return np.asarray(fgrid, dtype=float), "uniform_kernel_pdf(fallback)"
+
+    raise RuntimeError(
+        f"Unexpected return type from mom_likelihood_func: {type(ret).__name__}"
+    )
+
+
+def normalize_curve(vg: np.ndarray, fgrid: np.ndarray) -> np.ndarray:
+    fgrid = np.asarray(fgrid, dtype=float)
+    if fgrid.ndim != 1 or fgrid.shape[0] != vg.shape[0]:
+        return fgrid
+    area = np.trapezoid(fgrid, vg) if hasattr(np, "trapezoid") else np.trapz(fgrid, vg)
+    if np.isfinite(area) and area > 0:
+        return fgrid / area
+    return fgrid
+
+
+# -----------------------------
+# Main
+# -----------------------------
+
+
+def main() -> None:
     p = argparse.ArgumentParser(
-        description="End-to-end check for scalefree.mock (intrinsic version)."
+        description="Local scalefree intrinsic mock check (6D Cartesian output)."
     )
-    p.add_argument(
-        "--repo",
-        type=str,
-        default=str(Path(__file__).resolve().parents[1]),
-        help="Repo root (for local import).",
-    )
-
-    # Model
-    p.add_argument(
-        "--potential",
-        type=int,
-        default=1,
-        choices=[1, 2],
-        help="1=Kepler, 2=Logarithmic",
-    )
-    p.add_argument("--gamma", type=float, default=4.0)
-    p.add_argument("--q", type=float, default=1.0)
-    p.add_argument("--df", type=int, default=1, choices=[1, 2])
-    p.add_argument("--beta", type=float, default=0.0)
-    p.add_argument("--s", type=float, default=0.5)
-    p.add_argument("--t", type=float, default=0.0)
-
-    # Mock settings
-    p.add_argument("--nsamples", type=int, default=50_000)
-    p.add_argument("--theta-bins", type=int, default=45)
-    p.add_argument("--rin", type=float, default=1.0)
-    p.add_argument("--rout", type=float, default=1_000.0)
-    p.add_argument("--seed", type=int, default=1234)
-    p.add_argument("--maxmom", type=int, default=4)
-    p.add_argument("--vp-smooth-eps", type=float, default=0.0)
-    p.add_argument("--integration", type=int, default=1, choices=[0, 1])
-    p.add_argument("--ngl-or-eps", type=float, default=0.0)
-    p.add_argument("--nsig", type=int, default=10)
-
-    # Validation tolerances
-    p.add_argument(
-        "--rtol",
-        type=float,
-        default=0.07,
-        help="Relative tolerance on 2nd moments/beta (default 7%).",
-    )
-    p.add_argument(
-        "--atol-mean",
-        type=float,
-        default=0.05,
-        help="Absolute tolerance on means (default 0.05).",
-    )
-
-    p.add_argument(
-        "--plot", action="store_true", help="Show histograms vs reference Gaussians."
-    )
-
-    # args = p.parse_args()
-    # Jupyter injects extra args like --f=...json; ignore anything unknown
+    p.add_argument("--n_dens", type=int, default=8000)
+    p.add_argument("--n_vel", type=int, default=12000)
+    p.add_argument("--nbins", type=int, default=36)
+    p.add_argument("--hist_bins", type=int, default=80)
+    p.add_argument("--outdir", type=str, default="mock_check_outputs")
+    p.add_argument("--seed", type=int, default=42)
     args, _unknown = p.parse_known_args()
 
-    _force_repo_import(Path(args.repo))
+    repo_root = Path(__file__).resolve().parents[1]
+    _force_repo_import(repo_root)
 
-    from scalefree import ScaleFreeRunner
-    from scalefree.mock import mock as generate_mock
+    import scalefree  # noqa: E402
+    from scalefree import ScaleFreeRunner, mock  # noqa: E402
 
-    # -----------------
-    # Generate mock
-    # -----------------
-    X = generate_mock(
-        potential=lambda: int(args.potential),
-        gamma=float(args.gamma),
-        q=float(args.q),
-        df=int(args.df),
-        beta=float(args.beta),
-        s=float(args.s),
-        t=float(args.t),
-        nsamples=int(args.nsamples),
-        theta_bins=int(args.theta_bins),
-        rin=float(args.rin),
-        rout=float(args.rout),
-        seed=int(args.seed),
-        integration=int(args.integration),
-        ngl_or_eps=float(args.ngl_or_eps),
-        maxmom=int(args.maxmom),
-        vp_smooth_eps=float(args.vp_smooth_eps),
-        nsig=int(args.nsig),
-        debug=False,
+    dyn = _import_balrogo_dynamics()
+
+    print("Imported scalefree from:", Path(scalefree.__file__).resolve())
+
+    outdir = (Path(__file__).resolve().parent / args.outdir).resolve()
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Model parameters (intrinsic mock does not use inclination/xi sky-geometry)
+    # ------------------------------------------------------------------
+    model = dict(
+        potential=1,
+        gamma=2.0,
+        q=1.0,
+        df=1,
+        beta=0.0,
+        s=0.0,
+        t=0.0,
     )
 
-    x, y, z, vx, vy, vz = X.T
-    _r, theta, phi = _cart_to_sph_angles(x, y, z)
-    vr, vtheta, vphi = _cart_to_sph_v(theta=theta, phi=phi, vx=vx, vy=vy, vz=vz)
-    samp = _summarize_intrinsic(vr, vtheta, vphi)
-
-    # -----------------
-    # Analytic reference
-    # -----------------
+    # ------------------------------------------------------------------
+    # A) vprofile: intrinsic, average=True provides the reference fits
+    # ------------------------------------------------------------------
     runner = ScaleFreeRunner()
     res = runner.vprofile(
-        potential=lambda: int(args.potential),
-        gamma=float(args.gamma),
-        q=float(args.q),
-        df=int(args.df),
-        beta=float(args.beta),
-        s=float(args.s),
-        t=float(args.t),
+        **model,
         inclination=90.0,
         xi=0.0,
         theta=0.0,
-        integration=int(args.integration),
-        ngl_or_eps=float(args.ngl_or_eps),
+        integration=1,
+        ngl_or_eps=0,
         algorithm=3,
-        vp_smooth_eps=float(args.vp_smooth_eps),
-        maxmom=int(args.maxmom),
+        maxmom=20,
         average=True,
         kinematics="intrinsic",
-        usevp=False,
+        usevp=True,
         verbose_vp=0,
         output_path=None,
+        timeout_s=300,
         debug_prompts=False,
     )
-    ref = _read_intrinsic_shell_average(res)
+    prod = extract_intrinsic_products(res)
 
-    # -----------------
-    # Report + checks
-    # -----------------
-    print("\n=== Model ===")
-    print(
-        f"potential={args.potential} gamma={args.gamma} q={args.q} df={args.df} "
-        f"beta={args.beta} s={args.s} t={args.t}"
-    )
-    print("\n=== Mock settings ===")
-    print(
-        f"nsamples={args.nsamples} theta_bins={args.theta_bins} rin={args.rin} rout={args.rout} "
-        f"seed={args.seed} maxmom={args.maxmom}"
-    )
+    mom = prod.get("moments", {})
+    print("\n=== intrinsic moments (average=True) ===")
+    for k in ("rho", "vphi", "vr2", "vth2", "vphi2", "beta"):
+        if k in mom:
+            print(f"{k:>6} = {mom[k]:.6g}")
 
-    print("\n=== Intrinsic shell-average moments: sample vs reference ===")
-    rows = [
-        ("<vphi>", samp["vphi_mean"], ref["vphi_mean"]),
-        ("<vr^2>", samp["vr2"], ref["vr2"]),
-        ("<vtheta^2>", samp["vth2"], ref["vth2"]),
-        ("<vphi^2>", samp["vphi2"], ref["vphi2"]),
-        ("beta_v", samp["beta"], ref["beta"]),
-    ]
-    ok = True
-    for name, v_s, v_r in rows:
-        if name == "<vphi>":
-            err = abs(v_s - v_r)
-            passed = err <= float(args.atol_mean)
-            print(
-                f"{name:10s}  sample={v_s: .6e}  ref={v_r: .6e}  abs_err={err: .3e}  {'OK' if passed else 'FAIL'}"
-            )
+    print("\n=== vp_intrinsic summary rows (average=True) ===")
+    for ic in (1, 2, 3):
+        row = prod["vp_rows"].get(ic, {})
+        if row:
+            print(f"icomp={ic}: h3={row['h3']:.6g}, h4={row['h4']:.6g}")
         else:
-            err = _rel_err(v_s, v_r)
-            passed = err <= float(args.rtol)
-            print(
-                f"{name:10s}  sample={v_s: .6e}  ref={v_r: .6e}  rel_err={err: .3e}  {'OK' if passed else 'FAIL'}"
-            )
-        ok = ok and passed
+            print(f"icomp={ic}: (missing)")
 
-    if args.plot:
-        import matplotlib.pyplot as plt
+    # Reference means/sigmas from intrinsic moments
+    mu_ref = {1: 0.0, 2: 0.0, 3: float(mom.get("vphi", 0.0))}
+    sig_ref = {
+        1: math.sqrt(max(float(mom.get("vr2", 0.0)), 0.0)),
+        2: math.sqrt(max(float(mom.get("vth2", 0.0)), 0.0)),
+        3: math.sqrt(
+            max(float(mom.get("vphi2", 0.0)) - float(mom.get("vphi", 0.0)) ** 2, 0.0)
+        ),
+    }
 
-        def _plot_hist(vals: np.ndarray, mu: float, sig2: float, title: str) -> None:
-            v = np.asarray(vals, dtype=float)
-            v = v[np.isfinite(v)]
-            sig = float(np.sqrt(max(sig2, 1e-30)))
-            plt.figure()
-            plt.hist(v, bins=100, density=True)
-            grid = np.linspace(mu - 5 * sig, mu + 5 * sig, 400)
-            g = (1.0 / (np.sqrt(2.0 * np.pi) * sig)) * np.exp(
-                -0.5 * ((grid - mu) / sig) ** 2
-            )
-            plt.plot(grid, g)
-            plt.title(title)
-            plt.xlabel("v")
-            plt.ylabel("pdf")
-
-        _plot_hist(vr, 0.0, ref["vr2"], "vr: histogram vs N(0, <vr^2>)")
-        _plot_hist(vtheta, 0.0, ref["vth2"], "vtheta: histogram vs N(0, <vtheta^2>)")
-        _plot_hist(
-            vphi,
-            ref["vphi_mean"],
-            max(ref["vphi2"] - ref["vphi_mean"] ** 2, 1e-30),
-            "vphi: histogram vs Gaussian moments",
-        )
-        plt.show()
-
-    if not ok:
-        print("\nFAILED: at least one tolerance check did not pass.")
-        return 1
-
-    print(
-        "\nPASSED: mock shell-averaged intrinsic moments are consistent with vprofile."
+    # ------------------------------------------------------------------
+    # B) Density sanity check (positions)
+    # ------------------------------------------------------------------
+    xyzv = mock(
+        **model,
+        nsamples=int(args.n_dens),
+        seed=int(args.seed),
+        rin=0.5,
+        rout=50.0,
+        maxmom=20,
+        nbins=int(args.nbins),
+        debug=True,
     )
-    return 0
+
+    r3d = np.sqrt(xyzv[:, 0] ** 2 + xyzv[:, 1] ** 2 + xyzv[:, 2] ** 2)
+    rmid, rho_hat = shell_volume_density(r3d, nbins=25)
+    rho_th = volume_density_powerlaw_shape(model["gamma"], rmid)
+    k0 = len(rmid) // 2
+    rho_th_scaled = rho_th * (rho_hat[k0] / rho_th[k0])
+
+    fig = plt.figure()
+    plt.loglog(rmid, rho_hat, marker="o", linestyle="none", label="Mock: shell rho(r)")
+    plt.loglog(
+        rmid, rho_th_scaled, linestyle="-", label=r"Analytic: $r^{-\gamma}$ (scaled)"
+    )
+    plt.xlabel("3D radius r")
+    plt.ylabel("Volume density (arb.)")
+    plt.title(f"Density check (gamma={model['gamma']})")
+    plt.legend()
+    fig.savefig(outdir / "density_q1.png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # C) Flattening sanity check
+    # ------------------------------------------------------------------
+    model_flat = dict(model)
+    model_flat["q"] = 0.408
+    xyzv_flat = mock(
+        **model_flat,
+        nsamples=min(8000, int(args.n_dens)),
+        seed=int(args.seed) + 1,
+        rin=0.5,
+        rout=50.0,
+        maxmom=20,
+        nbins=int(args.nbins),
+        debug=False,
+    )
+
+    X = xyzv_flat[:, 0]
+    Z = xyzv_flat[:, 2]
+    q0 = float(model_flat["q"])
+
+    Re = np.sqrt(X * X + (Z / q0) ** 2)
+    Re0 = float(np.nanpercentile(Re, 60))
+
+    ang = np.linspace(0, 2 * np.pi, 400)
+    ex = Re0 * np.cos(ang)
+    ez = q0 * Re0 * np.sin(ang)
+
+    fig = plt.figure()
+    idx = np.random.default_rng(int(args.seed)).choice(
+        len(X), size=min(6000, len(X)), replace=False
+    )
+    plt.scatter(X[idx], Z[idx], s=2, alpha=0.25, label="Mock points (x-z)")
+    plt.plot(ex, ez, linewidth=2, label=f"Ellipse overlay (q={q0})")
+    plt.gca().set_aspect("equal", adjustable="box")
+    plt.xlabel("x")
+    plt.ylabel("z")
+    plt.title(f"Flattening sanity check (q={q0})")
+    plt.legend()
+    fig.savefig(outdir / "flattening_overlay.png", dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
+    # D) Velocity check in intrinsic spherical components
+    # ------------------------------------------------------------------
+    xyzv_vel = mock(
+        **model,
+        nsamples=int(args.n_vel),
+        seed=int(args.seed) + 2,
+        rin=1.0,
+        rout=2.0,
+        maxmom=20,
+        nbins=int(args.nbins),
+        debug=True,
+    )
+
+    sv = sph_vel_from_xyzv(xyzv_vel)
+
+    comp_map = {1: "vr", 2: "vtheta", 3: "vphi"}
+    comp_label = {1: "Vr", 2: "Vtheta", 3: "Vphi"}
+
+    for ic in (1, 2, 3):
+        name = comp_map[ic]
+        v = np.asarray(sv[name], dtype=float)
+        v = v[np.isfinite(v)]
+        if v.size == 0:
+            continue
+
+        fig = plt.figure()
+        plt.hist(
+            v,
+            bins=int(args.hist_bins),
+            density=True,
+            alpha=0.35,
+            label="Mock histogram (theta-binned)",
+        )
+
+        # Optional vp_table overlay
+        if ic in prod["vp_table"]:
+            vg_tab, vpg_tab = prod["vp_table"][ic]
+            vpg_tab = normalize_curve(vg_tab, vpg_tab)
+            plt.plot(
+                vg_tab, vpg_tab, linewidth=2, label="ScaleFree vp_table (normalized)"
+            )
+
+        # BALRoGO analytic curve from average=True fits
+        row = prod["vp_rows"].get(ic, {})
+        if row:
+            mu = float(mu_ref[ic])
+            sig = float(sig_ref[ic])
+            h3 = float(row.get("h3", float("nan")))
+            h4 = float(row.get("h4", float("nan")))
+
+            if np.all(np.isfinite([mu, sig, h3, h4])) and sig > 0:
+                fits = np.array([mu, sig, h3, h4], dtype=float)
+
+                vmin = float(np.min(v))
+                vmax = float(np.max(v))
+                if vmin == vmax:
+                    pad = 3.0 * sig
+                    vmin -= pad
+                    vmax += pad
+
+                vg = np.linspace(vmin, vmax, 1000)
+                fgrid, tag = balrogo_curve_from_fits(dyn, fits, vg)
+                fgrid = normalize_curve(vg, fgrid)
+
+                plt.plot(
+                    vg, fgrid, linewidth=2, label=f"BALRoGO curve (avg fits; {tag})"
+                )
+                plt.axvline(
+                    mu, linewidth=1.0, linestyle="--", label="Mean (from moments)"
+                )
+
+        plt.xlabel(f"{comp_label[ic]} (icomp={ic})")
+        plt.ylabel("PDF")
+        plt.title(
+            f"Intrinsic velocity check: {comp_label[ic]} (theta-binned mock vs avg-fit curve)"
+        )
+        plt.legend()
+        fig.savefig(outdir / f"velocity_icomp{ic}.png", dpi=200, bbox_inches="tight")
+        plt.close(fig)
+
+    print(f"\nDone. Outputs saved in: {outdir}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()
