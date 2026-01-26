@@ -1215,11 +1215,21 @@ class ScaleFreeRunner:
             if "Give verbose output of intermediate steps" in line:
                 return str(int(verbose_vp))
 
-            # VP prompt variants
-            if (
-                ("Calculate VPs" in line)
-                or ("Use VPs" in line)
-                or ("VP" in line and "?" in line)
+            # The Fortran code asks a second line immediately after the
+            # "intermediate steps" line:
+            #   "for VP calculation ? (0/1)"
+            # This is *also* the verbosity flag (iverb). It is NOT a
+            # "use VPs" switch, so it must never be tied to `usevp`.
+            if "for VP calculation" in line and "(0/1)" in line:
+                return str(int(verbose_vp))
+
+            # VP on/off prompt variants (some Fortran revisions include an
+            # explicit question about whether to compute VPs).
+            # Keep matching conservative to avoid hijacking the verbosity
+            # question above.
+            lline = line.lower()
+            if ("vp" in lline) and ("?" in lline) and (
+                ("calculate" in lline) or ("use" in lline)
             ):
                 return "1" if usevp else "0"
 
@@ -1343,6 +1353,12 @@ class ScaleFreeRunner:
                         if (not k.startswith("intrinsic"))
                         and k not in ("vp_intrinsic", "vp_table_intrinsic")
                     }
+
+                # Respect the public API: only expose VP products when
+                # explicitly requested via usevp=True.
+                if not usevp:
+                    for k in ("vp", "vp_table", "vp_intrinsic", "vp_table_intrinsic"):
+                        blocks.pop(k, None)
 
                 if not blocks:
                     raise RuntimeError(

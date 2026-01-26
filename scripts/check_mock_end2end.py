@@ -16,6 +16,8 @@ Notes
 -----
 - This script assumes the mock returns *Cartesian* phase-space coordinates.
 - No intermediate transformation to observed (LOS/POSr/POSt) coordinates is used.
+- For the velocity goodness-of-fit curves we use the *average=True* intrinsic VP
+  gaussian-fit parameters (gauss_V, gauss_sig) and GH moments (h3,h4).
 """
 
 from __future__ import annotations
@@ -91,7 +93,6 @@ def sph_vel_from_xyzv(xyzv: np.ndarray) -> Dict[str, np.ndarray]:
     """Return intrinsic spherical velocity components from (x,y,z,vx,vy,vz)."""
     x, y, z, vx, vy, vz = xyzv.T
     r = np.sqrt(x * x + y * y + z * z)
-    # Avoid division by zero in pathological cases
     r = np.where(r > 0, r, np.nan)
 
     theta = np.arccos(np.clip(z / r, -1.0, 1.0))
@@ -127,7 +128,7 @@ def sph_vel_from_xyzv(xyzv: np.ndarray) -> Dict[str, np.ndarray]:
 
 
 def extract_intrinsic_products(res) -> Dict[str, Any]:
-    """Extract intrinsic VP fits (h3/h4) and intrinsic moments for mean/sigma."""
+    """Extract intrinsic VP fits and VP table (if available)."""
     blocks = getattr(res, "blocks", {}) or {}
     out: Dict[str, Any] = {"vp_rows": {}, "vp_table": {}, "moments": {}}
 
@@ -164,16 +165,14 @@ def extract_intrinsic_products(res) -> Dict[str, Any]:
             for row in data:
                 ic = int(row[i_ic])
                 out["vp_rows"][ic] = {
-                    "h3": _get("h3", row),
-                    "h4": _get("h4", row),
-                    # keep gauss_* for inspection (not relied on for mean/sigma)
-                    "gauss_gam": _get("gauss_gam", row),
                     "gauss_V": _get("gauss_V", row),
                     "gauss_sig": _get("gauss_sig", row),
+                    "h3": _get("h3", row),
+                    "h4": _get("h4", row),
                 }
 
-    # vp_table overlays
-    vpt = blocks.get("vp_table")
+    # vp_table: for intrinsic VPs, parser stores these under vp_table_intrinsic
+    vpt = blocks.get("vp_table_intrinsic")
     if isinstance(vpt, dict):
         for icomp, tbl in vpt.items():
             if not isinstance(tbl, dict):
@@ -264,22 +263,25 @@ def main() -> None:
     outdir.mkdir(parents=True, exist_ok=True)
 
     # ------------------------------------------------------------------
-    # Model parameters (intrinsic mock does not use inclination/xi sky-geometry)
+    # Model parameters
     # ------------------------------------------------------------------
     model = dict(
-        potential=1,
+        potential=2,
         gamma=2.0,
-        q=1.0,
+        q=0.608,
         df=1,
-        beta=0.0,
-        s=0.0,
+        beta=0.189,
+        s=0.5,
         t=0.0,
     )
 
+    # Prefer the same backend path as scripts/quick_user_run.py
+    exe = (repo_root / "fortran_src" / "scalefree_intrvp.e").resolve()
+
     # ------------------------------------------------------------------
-    # A) vprofile: intrinsic, average=True provides the reference fits
+    # A) vprofile reference: intrinsic, average=True
     # ------------------------------------------------------------------
-    runner = ScaleFreeRunner()
+    runner = ScaleFreeRunner(exe_path=exe)
     res = runner.vprofile(
         **model,
         inclination=90.0,
@@ -288,7 +290,7 @@ def main() -> None:
         integration=1,
         ngl_or_eps=0,
         algorithm=3,
-        maxmom=20,
+        maxmom=10,
         average=True,
         kinematics="intrinsic",
         usevp=True,
@@ -309,18 +311,19 @@ def main() -> None:
     for ic in (1, 2, 3):
         row = prod["vp_rows"].get(ic, {})
         if row:
-            print(f"icomp={ic}: h3={row['h3']:.6g}, h4={row['h4']:.6g}")
+            print(
+                f"icomp={ic}: gauss_V={row['gauss_V']:.6g}, gauss_sig={row['gauss_sig']:.6g}, h3={row['h3']:.6g}, h4={row['h4']:.6g}"
+            )
         else:
             print(f"icomp={ic}: (missing)")
 
-    # Reference means/sigmas from intrinsic moments
-    mu_ref = {1: 0.0, 2: 0.0, 3: float(mom.get("vphi", 0.0))}
+    # Reference mean/sigma from gaussian VP fits
+    mu_ref = {
+        ic: float(prod["vp_rows"].get(ic, {}).get("gauss_V", 0.0)) for ic in (1, 2, 3)
+    }
     sig_ref = {
-        1: math.sqrt(max(float(mom.get("vr2", 0.0)), 0.0)),
-        2: math.sqrt(max(float(mom.get("vth2", 0.0)), 0.0)),
-        3: math.sqrt(
-            max(float(mom.get("vphi2", 0.0)) - float(mom.get("vphi", 0.0)) ** 2, 0.0)
-        ),
+        ic: float(prod["vp_rows"].get(ic, {}).get("gauss_sig", float("nan")))
+        for ic in (1, 2, 3)
     }
 
     # ------------------------------------------------------------------
@@ -329,12 +332,13 @@ def main() -> None:
     xyzv = mock(
         **model,
         nsamples=int(args.n_dens),
+        nbins=int(args.nbins),
         seed=int(args.seed),
         rin=0.5,
         rout=50.0,
-        maxmom=20,
-        nbins=int(args.nbins),
-        debug=True,
+        maxmom=8,
+        debug=False,
+        exe_path=exe,
     )
 
     r3d = np.sqrt(xyzv[:, 0] ** 2 + xyzv[:, 1] ** 2 + xyzv[:, 2] ** 2)
@@ -363,12 +367,13 @@ def main() -> None:
     xyzv_flat = mock(
         **model_flat,
         nsamples=min(8000, int(args.n_dens)),
+        nbins=int(args.nbins),
         seed=int(args.seed) + 1,
         rin=0.5,
         rout=50.0,
         maxmom=20,
-        nbins=int(args.nbins),
         debug=False,
+        exe_path=exe,
     )
 
     X = xyzv_flat[:, 0]
@@ -379,15 +384,15 @@ def main() -> None:
     Re0 = float(np.nanpercentile(Re, 60))
 
     ang = np.linspace(0, 2 * np.pi, 400)
-    ex = Re0 * np.cos(ang)
-    ez = q0 * Re0 * np.sin(ang)
+    ex_ = Re0 * np.cos(ang)
+    ez_ = q0 * Re0 * np.sin(ang)
 
     fig = plt.figure()
     idx = np.random.default_rng(int(args.seed)).choice(
         len(X), size=min(6000, len(X)), replace=False
     )
     plt.scatter(X[idx], Z[idx], s=2, alpha=0.25, label="Mock points (x-z)")
-    plt.plot(ex, ez, linewidth=2, label=f"Ellipse overlay (q={q0})")
+    plt.plot(ex_, ez_, linewidth=2, label=f"Ellipse overlay (q={q0})")
     plt.gca().set_aspect("equal", adjustable="box")
     plt.xlabel("x")
     plt.ylabel("z")
@@ -402,12 +407,13 @@ def main() -> None:
     xyzv_vel = mock(
         **model,
         nsamples=int(args.n_vel),
+        nbins=int(args.nbins),
         seed=int(args.seed) + 2,
         rin=1.0,
         rout=2.0,
         maxmom=20,
-        nbins=int(args.nbins),
-        debug=True,
+        debug=False,
+        exe_path=exe,
     )
 
     sv = sph_vel_from_xyzv(xyzv_vel)
@@ -436,10 +442,13 @@ def main() -> None:
             vg_tab, vpg_tab = prod["vp_table"][ic]
             vpg_tab = normalize_curve(vg_tab, vpg_tab)
             plt.plot(
-                vg_tab, vpg_tab, linewidth=2, label="ScaleFree vp_table (normalized)"
+                vg_tab,
+                vpg_tab,
+                linewidth=2,
+                label="ScaleFree vp_table (avg=True; normalized)",
             )
 
-        # BALRoGO analytic curve from average=True fits
+        # BALRoGO analytic curve from average=True gaussian+GH fits
         row = prod["vp_rows"].get(ic, {})
         if row:
             mu = float(mu_ref[ic])
@@ -464,9 +473,7 @@ def main() -> None:
                 plt.plot(
                     vg, fgrid, linewidth=2, label=f"BALRoGO curve (avg fits; {tag})"
                 )
-                plt.axvline(
-                    mu, linewidth=1.0, linestyle="--", label="Mean (from moments)"
-                )
+                plt.axvline(mu, linewidth=1.0, linestyle="--", label="gauss_V")
 
         plt.xlabel(f"{comp_label[ic]} (icomp={ic})")
         plt.ylabel("PDF")

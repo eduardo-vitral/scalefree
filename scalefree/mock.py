@@ -1,69 +1,57 @@
 #!/usr/bin/env python3
 """scalefree.mock
 
-Intrinsic (6D) mock generator.
+Intrinsic mock generator based on `scalefree.vmoments`.
 
-This module generates a phase-space sample ``(x,y,z,vx,vy,vz)`` for a ScaleFree
-model using the *intrinsic* (local) velocity-profile (VP) formalism.
+This file replaces the previous projected-frame mock generator. It creates
+Cartesian 6D samples (x,y,z,vx,vy,vz) by:
 
-Requirements imposed by the project request
--------------------------------------------
-- The mass model is set by: ``gamma, beta, df, potential, s, t, q``.
-- ``algorithm`` is forced to 3 (VP smoothing) while ``maxmom`` remains user-
-  configurable.
-- The intrinsic polar angle theta is binned into ``nbins`` bins over
-  [0, 90] degrees (symmetry about the equatorial plane).
-- For each occupied theta-bin we compute intrinsic VP parameters (Gaussian
-  mean/sigma and Gauss-Hermite h3/h4) and sample velocities for each intrinsic
-  component (Vr, Vtheta, Vphi) using BALRoGO's Sanders–Evans GH PDFs.
-- The final output is returned in intrinsic Cartesian coordinates:
-  ``(x, y, z, vx, vy, vz)``.
+1) Sampling positions from the ScaleFree *volume* density with intrinsic
+   flattening `q`.
+2) Folding the intrinsic meridional angle theta into [0, 90] degrees and
+   binning it into `nbins` bins.
+3) For each occupied bin, calling `ScaleFreeRunner.vprofile` in intrinsic
+   point mode to obtain intrinsic VP diagnostics (`vp_intrinsic`), forcing
+   `algorithm=3`.
+4) Using the VP Gaussian-fit parameters (`gauss_V`, `gauss_sig`) and GH moments
+   (`h3`, `h4`) per intrinsic component (v_r, v_theta, v_phi) to sample
+   velocities via BALRoGO.
+5) Converting spherical velocities to Cartesian in the model frame.
 
 Notes
 -----
-- This is a Python-only mock generator: it does not rely on any Fortran-side
-  mock sampler, but it *does* call the ScaleFree Fortran backend through
-  :class:`scalefree.vmoments.ScaleFreeRunner` to obtain VP summaries.
-- The position sampler uses the standard axisymmetric ScaleFree density
-  ``rho ∝ (R^2 + z^2/q^2)^(-gamma/2)`` with symmetry axis z.
+- The mass model is specified by: potential, gamma, q, df, beta, s, t.
+- `maxmom` is user-controlled; `algorithm` is forced to 3.
+- The intrinsic `vprofile` results are at r=1 in dimensionless units, but
+  the ScaleFree nature allows scaling; the mock follows the existing package
+  convention (as the earlier mock did).
+
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
 import numpy as np
 
 
 # -----------------------------------------------------------------------------
-# Small utilities
+# Helpers: density sampling (ScaleFree ellipsoidal power-law)
 # -----------------------------------------------------------------------------
+
 
 def _coerce_seed(seed: Optional[int]) -> Optional[int]:
-    """NumPy default_rng requires a non-negative seed; map negatives into uint32."""
     if seed is None:
         return None
-    s = int(seed)
-    return s % (2**32)
+    return int(seed) % (2**32)
 
-
-def _coerce_potential(potential: Any) -> Callable[[], int]:
-    """ScaleFreeRunner accepts many potential encodings; keep backward-compat for int."""
-    if callable(potential):
-        return potential
-    # Allow int-like potentials
-    return lambda: int(potential)
-
-
-# -----------------------------------------------------------------------------
-# Density sampling (intrinsic coordinates)
-# -----------------------------------------------------------------------------
 
 def _sample_radius_powerlaw(
     rng: np.random.Generator, *, n: int, rin: float, rout: float, gamma: float
 ) -> np.ndarray:
-    """Sample r with p(r) ∝ r^(2-gamma) (CDF ∝ r^(3-gamma))."""
+    """Sample spherical r with p(r) ∝ r^(2-gamma) over [rin, rout]."""
     if rin <= 0 or rout <= rin:
         raise ValueError("Require 0 < rin < rout.")
     a = 3.0 - float(gamma)
@@ -75,7 +63,7 @@ def _sample_radius_powerlaw(
 
 
 def _theta_accept_prob(theta: np.ndarray, *, q: float, gamma: float) -> np.ndarray:
-    """Acceptance probability for theta under rho ∝ (R^2 + z^2/q^2)^(-gamma/2)."""
+    """Acceptance ∝ (sin^2θ + cos^2θ/q^2)^(-gamma/2)."""
     ct = np.cos(theta)
     st = np.sin(theta)
     denom = st * st + (ct / q) * (ct / q)
@@ -90,8 +78,8 @@ def _sample_positions_scalefree(
     gamma: float,
     q: float,
     rng: np.random.Generator,
-) -> np.ndarray:
-    """Return xyz (N,3) in the intrinsic model frame."""
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Return xyz (N,3) and spherical (r, theta, phi) in the model frame."""
     if n < 0:
         raise ValueError("n must be >= 0.")
     if q <= 0:
@@ -99,11 +87,11 @@ def _sample_positions_scalefree(
 
     r = _sample_radius_powerlaw(rng, n=n, rin=rin, rout=rout, gamma=gamma)
 
-    # theta rejection sampling
+    # theta rejection sampling over [0, pi]
     theta = np.empty(n, dtype=float)
     filled = 0
 
-    # conservative upper bound; ensures acceptance <= 1 even if q > 1
+    # Conservative bound so acceptance <= 1
     prob_max = max(1.0, float(q) ** float(gamma))
 
     while filled < n:
@@ -131,18 +119,18 @@ def _sample_positions_scalefree(
     y = r * st * sp
     z = r * ct
 
-    return np.column_stack([x, y, z])
+    return np.column_stack([x, y, z]), r, theta, phi
 
 
 # -----------------------------------------------------------------------------
-# BALRoGO (Sanders–Evans) sampling
+# Helpers: BALRoGO GH sampling
 # -----------------------------------------------------------------------------
+
 
 _BALROGO_DYN = None
 
 
 def _import_balrogo_dynamics():
-    """Import BALRoGO dynamics (or local fallback dynamics.py)."""
     global _BALROGO_DYN
     if _BALROGO_DYN is not None:
         return _BALROGO_DYN
@@ -165,36 +153,30 @@ def _sample_balrogo_gh(
     h4: float,
     n: int,
     rng: np.random.Generator,
-    nsig: int = 10,
-    debug: bool = False,
+    nsig: int,
+    debug: bool,
 ) -> np.ndarray:
-    """Sample N values from BALRoGO's Gauss–Hermite PDF via inverse-CDF sampling."""
     if n <= 0:
         return np.empty((0,), dtype=float)
 
-    if (not np.isfinite(mean)) or (not np.isfinite(sigma)) or (sigma <= 0):
+    if (not np.isfinite(mean)) or (not np.isfinite(sigma)) or sigma <= 0:
         return rng.normal(loc=float(mean), scale=max(float(sigma), 1e-12), size=n)
 
     dyn = _import_balrogo_dynamics()
 
     mom_stats = np.array(
-        [
-            [float(mean), 0.0],
-            [float(sigma), 0.0],
-            [float(h3), 0.0],
-            [float(h4), 0.0],
-        ],
+        [[float(mean), 0.0], [float(sigma), 0.0], [float(h3), 0.0], [float(h4), 0.0]],
         dtype=float,
     )
-
     eps = np.zeros(n, dtype=float)
 
-    # BALRoGO uses NumPy global RNG; bridge deterministically from our rng.
+    # BALRoGO uses NumPy global RNG; seed deterministically from our RNG.
     np_seed = int(rng.integers(0, 2**32 - 1, dtype=np.uint32))
     np.random.seed(np_seed)
 
-    samples = dyn.mom_sample_generator(mom_stats, eps=eps, nsig=int(nsig), debug=bool(debug))
-
+    samples = dyn.mom_sample_generator(
+        mom_stats, eps=eps, nsig=int(nsig), debug=bool(debug)
+    )
     if samples is None:
         return rng.normal(loc=float(mean), scale=float(sigma), size=n)
 
@@ -206,82 +188,48 @@ def _sample_balrogo_gh(
 
 
 # -----------------------------------------------------------------------------
-# Intrinsic VP extraction (ScaleFreeRunner.vprofile output)
+# VP extraction via vmoments
 # -----------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class GHParams:
-    mean: float
+    mu: float
     sig: float
     h3: float
     h4: float
 
 
+def _repo_root() -> Path:
+    # scalefree/mock.py -> scalefree/ -> repo root
+    return Path(__file__).resolve().parents[1]
+
+
+def _default_intrinsic_exe() -> Path:
+    """Mirror scripts/quick_user_run.py default backend path."""
+    return _repo_root() / "fortran_src" / "scalefree_intrvp.e"
+
+
 def _extract_intrinsic_moments(res) -> Tuple[float, float, float, float]:
-    """Return (vphi, vr2, vth2, vphi2) from intrinsic moment blocks."""
-    blocks = getattr(res, "blocks", {}) or {}
-
-    blk = blocks.get("intrinsic_point")
-    if blk is None:
-        blk = blocks.get("intrinsic_shell_average")
-
-    if not isinstance(blk, dict):
-        raise RuntimeError("vprofile did not return an intrinsic moments block.")
-
-    cols = list(blk.get("columns", []))
-    data = np.asarray(blk.get("data"))
-
-    if data.ndim == 1:
-        data = data.reshape(1, -1)
-    if data.ndim != 2 or data.shape[0] < 1:
-        raise RuntimeError("Intrinsic moments block has unexpected shape.")
-
-    row = data[0]
-
-    def get(name: str) -> float:
-        if name not in cols:
-            raise KeyError(f"Missing column '{name}' in intrinsic moments block. cols={cols}")
-        return float(row[cols.index(name)])
-
-    vphi = get("vphi")
-    vr2 = get("vr2")
-    vth2 = get("vth2")
-    vphi2 = get("vphi2")
-    return vphi, vr2, vth2, vphi2
+    """Return (vphi, vr2, vth2, vphi2) from intrinsic_point/shell_average."""
+    for k in ("intrinsic_point", "intrinsic_shell_average"):
+        if k in res.blocks:
+            blk = res.blocks[k]
+            cols = [c.lower() for c in blk.get("columns", [])]
+            data = blk.get("data")
+            if data is None or getattr(data, "size", 0) == 0:
+                break
+            row = data[0]
+            idx = {c: i for i, c in enumerate(cols)}
+            vphi = float(row[idx.get("vphi", 1)]) if "vphi" in idx else float(row[1])
+            vr2 = float(row[idx.get("vr2", 2)]) if "vr2" in idx else float(row[2])
+            vth2 = float(row[idx.get("vth2", 3)]) if "vth2" in idx else float(row[3])
+            vphi2 = float(row[idx.get("vphi2", 4)]) if "vphi2" in idx else float(row[4])
+            return vphi, vr2, vth2, vphi2
+    raise KeyError("No intrinsic moments block found in ScaleFreeResult.")
 
 
-def _extract_h3_h4(res, icomp: int) -> Tuple[float, float]:
-    """Extract (h3, h4) for intrinsic component icomp from vp_intrinsic."""
-    blocks = getattr(res, "blocks", {}) or {}
-    vp = blocks.get("vp_intrinsic")
-    if vp is None:
-        raise RuntimeError("vprofile did not return a 'vp_intrinsic' summary block.")
-
-    cols = list(vp.get("columns", []))
-    data = np.asarray(vp.get("data"))
-
-    def idx(name: str) -> int:
-        try:
-            return cols.index(name)
-        except ValueError as e:
-            raise KeyError(f"Missing column '{name}' in vp_intrinsic summary. cols={cols}") from e
-
-    i_comp = idx("icomp")
-    i_h3 = idx("h3")
-    i_h4 = idx("h4")
-
-    hit = np.where(data[:, i_comp].astype(int, copy=False) == int(icomp))[0]
-    if hit.size != 1:
-        raise RuntimeError(
-            f"Expected exactly one vp_intrinsic row for icomp={icomp}; found {hit.size}."
-        )
-
-    r = data[hit[0]]
-    return float(r[i_h3]), float(r[i_h4])
-
-
-def _scalefree_intrinsic_params_for_theta_bin(
+def _gh_params_for_theta_bin(
     *,
     runner,
     potential: Any,
@@ -299,11 +247,26 @@ def _scalefree_intrinsic_params_for_theta_bin(
     maxmom: int,
     vp_smooth_eps: float,
     verbose_vp: int,
+    debug_prompts: bool,
 ) -> Dict[int, GHParams]:
-    """Compute intrinsic (Vr,Vtheta,Vphi) GH parameters for a single theta-bin."""
+    """Compute GH parameters (mu,sig,h3,h4) for (v_r, v_th, v_phi) at a theta bin."""
 
-    # vprofile still expects inclination/xi/theta inputs.
-    # For intrinsic kinematics, inclination is irrelevant; keep a benign value.
+    print("\n\nChecking quantities:")
+    print(potential, type(potential), 2)
+    print(float(gamma), type(float(gamma)), 2)
+    print(float(q), type(float(q)), 0.608)
+    print(int(df), type(int(df)), 1)
+    print(float(beta), type(float(beta)), 0.189)
+    print(float(s), type(float(s)), 0.5)
+    print(float(t), type(float(t)), 0.0)
+    print(57.1)
+    print(float(xi), float(xi), 0.0)
+    print(float(theta_deg), float(theta_deg), 0.0)
+    print(int(integration), type(int(integration)), 1)
+    print(float(ngl_or_eps), type(float(ngl_or_eps)), 0)
+    print(3)
+    print(int(maxmom), type(int(maxmom)), 8)
+    # Intrinsic kinematics: inclination is not used by Fortran for iwhat=0.
     res = runner.vprofile(
         potential=potential,
         gamma=float(gamma),
@@ -312,170 +275,220 @@ def _scalefree_intrinsic_params_for_theta_bin(
         beta=float(beta),
         s=float(s),
         t=float(t),
-        inclination=90.0,
+        inclination=57.1,
         xi=float(xi),
-        theta=float(theta_deg),
+        # theta=float(theta_deg),
+        theta=0,
         integration=int(integration),
         ngl_or_eps=float(ngl_or_eps),
         algorithm=3,
-        vp_smooth_eps=float(vp_smooth_eps),
         maxmom=int(maxmom),
+        # maxmom=6,
         average=False,
         kinematics="intrinsic",
         usevp=True,
-        verbose_vp=int(verbose_vp),
-        output_path=None,
-        debug_prompts=False,
+        verbose_vp=0,
+        # debug_prompts=False,
     )
 
-    vphi, vr2, vth2, vphi2 = _extract_intrinsic_moments(res)
+    # res = runner.vprofile(
+    #     potential=2, gamma=2.0, q=0.608, df=1, beta=0.189, s=0.5, t=0.0,
+    #     inclination=57.1, xi=0.0, theta=0.0,
+    #     integration=1, ngl_or_eps=0, algorithm=3, maxmom=8,
+    #     kinematics="intrinsic", average=False,
+    #     usevp=True, verbose_vp=0,
+    # )
 
-    # Means and dispersions to feed BALRoGO.
-    mu_r = 0.0
-    mu_th = 0.0
-    mu_phi = float(vphi)
+    # Primary source: VP gaussian-fit summary
+    vpblk = res.blocks.get("vp_intrinsic")
+    by = vpblk.get("by_icomp", {}) if isinstance(vpblk, dict) else {}
 
-    sig_r = float(np.sqrt(max(vr2, 0.0)))
-    sig_th = float(np.sqrt(max(vth2, 0.0)))
-    sig_phi = float(np.sqrt(max(vphi2 - vphi * vphi, 0.0)))
+    # Fallback (only if VP block is incomplete): intrinsic moments
+    vphi_m, vr2_m, vth2_m, vphi2_m = _extract_intrinsic_moments(res)
 
-    h3_r, h4_r = _extract_h3_h4(res, 1)
-    h3_th, h4_th = _extract_h3_h4(res, 2)
-    h3_phi, h4_phi = _extract_h3_h4(res, 3)
+    out: Dict[int, GHParams] = {}
+    for icomp in (1, 2, 3):
+        row = by.get(icomp, {}) if isinstance(by, dict) else {}
 
-    return {
-        1: GHParams(mu_r, sig_r, h3_r, h4_r),
-        2: GHParams(mu_th, sig_th, h3_th, h4_th),
-        3: GHParams(mu_phi, sig_phi, h3_phi, h4_phi),
-    }
+        mu = float(row.get("gauss_V", np.nan))
+        sig = float(row.get("gauss_sig", np.nan))
+        h3 = float(row.get("h3", np.nan))
+        h4 = float(row.get("h4", np.nan))
+
+        # Robustness: some legacy outputs may omit these keys.
+        if not np.isfinite(mu):
+            mu = float(row.get("true_V", 0.0))
+        if not np.isfinite(sig) or sig <= 0:
+            sig = float(row.get("true_sig", np.nan))
+
+        # Final fallback to moment-derived mu/sig if still missing.
+        if not np.isfinite(mu) or not np.isfinite(sig) or sig <= 0:
+            if icomp == 1:
+                mu = 0.0
+                sig = float(np.sqrt(max(vr2_m, 0.0)))
+            elif icomp == 2:
+                mu = 0.0
+                sig = float(np.sqrt(max(vth2_m, 0.0)))
+            else:
+                mu = float(vphi_m)
+                sig = float(np.sqrt(max(vphi2_m - vphi_m * vphi_m, 0.0)))
+
+        # h3/h4 fallback (if missing): assume Gaussian (0,0)
+        if not np.isfinite(h3):
+            h3 = 0.0
+        if not np.isfinite(h4):
+            h4 = 0.0
+
+        out[icomp] = GHParams(mu=float(mu), sig=float(sig), h3=float(h3), h4=float(h4))
+
+    return out
 
 
 # -----------------------------------------------------------------------------
-# Spherical <-> Cartesian velocity transforms
+# Coordinate transforms: spherical -> Cartesian
 # -----------------------------------------------------------------------------
 
-def _sph_from_xyz(x: np.ndarray, y: np.ndarray, z: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    r = np.sqrt(x * x + y * y + z * z)
-    # theta in [0, pi]
-    theta = np.arccos(np.clip(z / np.where(r > 0, r, 1.0), -1.0, 1.0))
-    phi = np.arctan2(y, x)
-    return r, theta, phi
 
-
-def _vxyz_from_sph(
+def _sph_vel_to_cart(
+    *,
+    theta: np.ndarray,
+    phi: np.ndarray,
     vr: np.ndarray,
     vtheta: np.ndarray,
     vphi: np.ndarray,
-    theta: np.ndarray,
-    phi: np.ndarray,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> np.ndarray:
+    """Convert (vr, vtheta, vphi) to (vx, vy, vz) for standard physics convention."""
     st = np.sin(theta)
     ct = np.cos(theta)
-    cp = np.cos(phi)
     sp = np.sin(phi)
+    cp = np.cos(phi)
 
-    # unit vectors
-    # e_r    = (st*cp, st*sp, ct)
-    # e_th   = (ct*cp, ct*sp, -st)
-    # e_phi  = (-sp, cp, 0)
+    # Unit vectors
+    # e_r
+    erx = st * cp
+    ery = st * sp
+    erz = ct
+    # e_theta
+    etx = ct * cp
+    ety = ct * sp
+    etz = -st
+    # e_phi
+    epx = -sp
+    epy = cp
+    epz = 0.0
 
-    vx = vr * st * cp + vtheta * ct * cp - vphi * sp
-    vy = vr * st * sp + vtheta * ct * sp + vphi * cp
-    vz = vr * ct - vtheta * st
-    return vx, vy, vz
+    vx = vr * erx + vtheta * etx + vphi * epx
+    vy = vr * ery + vtheta * ety + vphi * epy
+    vz = vr * erz + vtheta * etz + vphi * epz
+
+    return np.column_stack([vx, vy, vz])
 
 
 # -----------------------------------------------------------------------------
 # Public API
 # -----------------------------------------------------------------------------
 
+
 def mock(
     *,
-    # ScaleFree model parameters
-    potential: Any = 1,
-    gamma: float = 4.0,
-    q: float = 1.0,
-    df: int = 1,
-    beta: float = 0.0,
-    s: float = 0.5,
-    t: float = 0.0,
-    # sampling controls
-    nsamples: int = 1000,
+    potential: Any,
+    gamma: float,
+    q: float,
+    df: int,
+    beta: float,
+    s: float,
+    t: float,
+    nsamples: int,
+    nbins: int,
     seed: Optional[int] = None,
-    rin: float = 1.0,
-    rout: float = 1000.0,
-    # theta binning
-    nbins: int = 36,
-    # VP settings (algorithm is forced to 3)
-    maxmom: int = 20,
+    rin: float = 0.5,
+    rout: float = 50.0,
+    # numerical backend settings
     integration: int = 1,
     ngl_or_eps: float = 0.0,
     vp_smooth_eps: float = 0.0,
     xi: float = 0.0,
     verbose_vp: int = 0,
-    # BALRoGO settings
+    maxmom: int = 10,
+    # sampling settings
     nsig: int = 10,
     debug: bool = False,
+    # advanced: override backend
+    exe_path: Optional[Path] = None,
 ) -> np.ndarray:
-    """Generate a 6D intrinsic mock.
+    """Generate an intrinsic ScaleFree mock.
 
     Returns
     -------
-    ndarray
-        Shape (nsamples, 6) with columns (x, y, z, vx, vy, vz).
+    xyzv : ndarray, shape (N, 6)
+        Columns: x y z vx vy vz (Cartesian, model frame).
     """
+
     n = int(nsamples)
     if n < 0:
-        raise ValueError("nsamples must be >= 0.")
+        raise ValueError("nsamples must be >= 0")
+
     nb = int(nbins)
     if nb < 1:
-        raise ValueError("nbins must be >= 1.")
+        raise ValueError("nbins must be >= 1")
 
     rng = np.random.default_rng(_coerce_seed(seed))
-    potential = _coerce_potential(potential)
 
-    # 1) sample positions
-    xyz = _sample_positions_scalefree(n=n, rin=rin, rout=rout, gamma=gamma, q=q, rng=rng)
-    x, y, z = xyz[:, 0], xyz[:, 1], xyz[:, 2]
+    # 1) positions
+    xyz, r, theta, phi = _sample_positions_scalefree(
+        n=n,
+        rin=float(rin),
+        rout=float(rout),
+        gamma=float(gamma),
+        q=float(q),
+        rng=rng,
+    )
 
-    # 2) intrinsic spherical angles and symmetric theta in [0, pi/2]
-    _r, theta, phi = _sph_from_xyz(x, y, z)
-    theta_sym = np.minimum(theta, np.pi - theta)
-    theta_deg = np.degrees(theta_sym)
+    # 2) theta-binning over [0, 90] degrees by symmetry
+    theta_fold = np.minimum(theta, np.pi - theta)
+    theta_deg = np.degrees(theta_fold)
 
-    # 3) bin theta in [0, 90]
     edges = np.linspace(0.0, 90.0, nb + 1)
     bin_id = np.digitize(theta_deg, edges, right=False) - 1
     bin_id = np.clip(bin_id, 0, nb - 1)
     centers = 0.5 * (edges[:-1] + edges[1:])
 
-    # 4) compute intrinsic VP params per occupied bin
-    from scalefree import ScaleFreeRunner  # local import avoids circular issues
+    # 3) backend runner (prefer the same default as scripts/quick_user_run.py)
+    from scalefree import ScaleFreeRunner  # local import avoids circulars
 
-    runner = ScaleFreeRunner()
+    exe = (
+        Path(exe_path).expanduser().resolve()
+        if exe_path is not None
+        else _default_intrinsic_exe()
+    )
+    runner = ScaleFreeRunner(exe_path=exe)
 
+    # 4) compute GH params per occupied bin
     gh_by_bin: Dict[int, Dict[int, GHParams]] = {}
     occupied = np.unique(bin_id)
+
     for b in occupied:
-        gh_by_bin[int(b)] = _scalefree_intrinsic_params_for_theta_bin(
+        b = int(b)
+        gh_by_bin[b] = _gh_params_for_theta_bin(
             runner=runner,
             potential=potential,
-            gamma=gamma,
-            q=q,
-            df=df,
-            beta=beta,
-            s=s,
-            t=t,
-            theta_deg=float(centers[int(b)]),
-            xi=xi,
-            integration=integration,
-            ngl_or_eps=ngl_or_eps,
-            maxmom=maxmom,
-            vp_smooth_eps=vp_smooth_eps,
-            verbose_vp=verbose_vp,
+            gamma=float(gamma),
+            q=float(q),
+            df=int(df),
+            beta=float(beta),
+            s=float(s),
+            t=float(t),
+            theta_deg=float(centers[b]),
+            xi=float(xi),
+            integration=int(integration),
+            ngl_or_eps=float(ngl_or_eps),
+            maxmom=int(maxmom),
+            vp_smooth_eps=float(vp_smooth_eps),
+            verbose_vp=int(verbose_vp),
+            debug_prompts=bool(debug),
         )
 
-    # 5) sample (vr, vtheta, vphi) per bin
+    # 5) sample velocities per bin
     vr = np.empty(n, dtype=float)
     vth = np.empty(n, dtype=float)
     vph = np.empty(n, dtype=float)
@@ -488,46 +501,45 @@ def mock(
             continue
 
         gh = gh_by_bin[b]
-        p1, p2, p3 = gh[1], gh[2], gh[3]
+        p_r = gh[1]
+        p_th = gh[2]
+        p_ph = gh[3]
 
         vr[sel] = _sample_balrogo_gh(
-            mean=p1.mean,
-            sigma=max(p1.sig, 1e-12),
-            h3=p1.h3,
-            h4=p1.h4,
+            mean=p_r.mu,
+            sigma=p_r.sig,
+            h3=p_r.h3,
+            h4=p_r.h4,
             n=m,
             rng=rng,
-            nsig=nsig,
+            nsig=int(nsig),
+            debug=bool(debug),
         )
         vth[sel] = _sample_balrogo_gh(
-            mean=p2.mean,
-            sigma=max(p2.sig, 1e-12),
-            h3=p2.h3,
-            h4=p2.h4,
+            mean=p_th.mu,
+            sigma=p_th.sig,
+            h3=p_th.h3,
+            h4=p_th.h4,
             n=m,
             rng=rng,
-            nsig=nsig,
+            nsig=int(nsig),
+            debug=bool(debug),
         )
         vph[sel] = _sample_balrogo_gh(
-            mean=p3.mean,
-            sigma=max(p3.sig, 1e-12),
-            h3=p3.h3,
-            h4=p3.h4,
+            mean=p_ph.mu,
+            sigma=p_ph.sig,
+            h3=p_ph.h3,
+            h4=p_ph.h4,
             n=m,
             rng=rng,
-            nsig=nsig,
+            nsig=int(nsig),
+            debug=bool(debug),
         )
 
-    # 6) (vr,vtheta,vphi) -> (vx,vy,vz)
-    vx, vy, vz = _vxyz_from_sph(vr, vth, vph, theta=theta, phi=phi)
+    # 6) spherical -> Cartesian velocities (use original theta, phi)
+    vxyz = _sph_vel_to_cart(theta=theta, phi=phi, vr=vr, vtheta=vth, vphi=vph)
 
-    out = np.column_stack([x, y, z, vx, vy, vz])
+    return np.column_stack([xyz, vxyz])
 
-    if debug:
-        counts = np.bincount(bin_id, minlength=nb)
-        nz = np.count_nonzero(counts)
-        print(f"[mock intrinsic] nsamples={n} nbins={nb} occupied_bins={nz} (theta in 0..90 deg)")
-        if nz:
-            print(f"[mock intrinsic] min_bin_count={counts[counts>0].min()} max_bin_count={counts.max()}")
 
-    return out
+__all__ = ["mock"]

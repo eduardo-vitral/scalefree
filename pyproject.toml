@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "scalefree"
-version = "0.1.8"
+version = "0.2.0"
 description = "Scale-free DF velocity moments and VP calculations with a Fortran backend."
 authors = [
   "Eduardo Vitral <eduardo.vitral@roe.ac.uk>",

@@ -131,7 +131,7 @@ def run_case(
         q=0.608,
         df=1,
         beta=0.189,
-        s=0.5,
+        s=0.0,
         t=0.0,
         inclination=57.1,
         xi=0.0,

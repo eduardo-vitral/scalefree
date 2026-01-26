@@ -154,12 +154,7 @@ print(X.shape)  # (N, 6): (x, y, z, vx, vy, vz)
 
 To keep this README short, more detailed guides are intended to live under `docs/`:
 
-- `docs/getting-started.md`
-- `docs/api.md`
-- `docs/vprofile.md`
-- `docs/gauss-hermite.md`
-- `docs/mock-generator.md`
-- `docs/troubleshooting.md`
+- `docs/vmoments.md`
 - Theory notes:
   - `docs/theory/rotation.md`
   - `docs/theory/vp-shapes.md`
