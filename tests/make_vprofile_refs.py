@@ -178,6 +178,7 @@ def _common_kwargs(*, algorithm: int, kinematics: str) -> dict:
         "integration": 1,
         "ngl_or_eps": 0,
         "debug_prompts": False,
+        "_skip_df1_beta_correction": True,
     }
 
     if algorithm == 3:

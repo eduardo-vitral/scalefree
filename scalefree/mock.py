@@ -62,7 +62,12 @@ def _sample_radius_powerlaw(
     return rin * np.exp(u * np.log(rout / rin))
 
 
-def _theta_accept_prob(theta: np.ndarray, *, q: float, gamma: float) -> np.ndarray:
+def _theta_accept_prob(
+    theta: np.ndarray,
+    *,
+    q: float,
+    gamma: float,
+) -> np.ndarray:
     """Acceptance ∝ (sin^2θ + cos^2θ/q^2)^(-gamma/2)."""
     ct = np.cos(theta)
     st = np.sin(theta)
@@ -160,12 +165,21 @@ def _sample_balrogo_gh(
         return np.empty((0,), dtype=float)
 
     if (not np.isfinite(mean)) or (not np.isfinite(sigma)) or sigma <= 0:
-        return rng.normal(loc=float(mean), scale=max(float(sigma), 1e-12), size=n)
+        return rng.normal(
+            loc=float(mean),
+            scale=max(float(sigma), 1e-12),
+            size=n,
+        )
 
     dyn = _import_balrogo_dynamics()
 
     mom_stats = np.array(
-        [[float(mean), 0.0], [float(sigma), 0.0], [float(h3), 0.0], [float(h4), 0.0]],
+        [
+            [float(mean), 0.0],
+            [float(sigma), 0.0],
+            [float(h3), 0.0],
+            [float(h4), 0.0],
+        ],
         dtype=float,
     )
     eps = np.zeros(n, dtype=float)
@@ -221,10 +235,34 @@ def _extract_intrinsic_moments(res) -> Tuple[float, float, float, float]:
                 break
             row = data[0]
             idx = {c: i for i, c in enumerate(cols)}
-            vphi = float(row[idx.get("vphi", 1)]) if "vphi" in idx else float(row[1])
-            vr2 = float(row[idx.get("vr2", 2)]) if "vr2" in idx else float(row[2])
-            vth2 = float(row[idx.get("vth2", 3)]) if "vth2" in idx else float(row[3])
-            vphi2 = float(row[idx.get("vphi2", 4)]) if "vphi2" in idx else float(row[4])
+            vphi = (
+                float(
+                    row[idx.get("vphi", 1)],
+                )
+                if "vphi" in idx
+                else float(row[1])
+            )
+            vr2 = (
+                float(
+                    row[idx.get("vr2", 2)],
+                )
+                if "vr2" in idx
+                else float(row[2])
+            )
+            vth2 = (
+                float(
+                    row[idx.get("vth2", 3)],
+                )
+                if "vth2" in idx
+                else float(row[3])
+            )
+            vphi2 = (
+                float(
+                    row[idx.get("vphi2", 4)],
+                )
+                if "vphi2" in idx
+                else float(row[4])
+            )
             return vphi, vr2, vth2, vphi2
     raise KeyError("No intrinsic moments block found in ScaleFreeResult.")
 
@@ -249,7 +287,8 @@ def _gh_params_for_theta_bin(
     verbose_vp: int,
     debug_prompts: bool,
 ) -> Dict[int, GHParams]:
-    """Compute GH parameters (mu,sig,h3,h4) for (v_r, v_th, v_phi) at a theta bin."""
+    """Compute GH parameters (mu,sig,h3,h4)
+    for (v_r, v_th, v_phi) at a theta bin."""
 
     # print("\n\nChecking quantities:")
     # print(potential, type(potential), 2)
@@ -338,7 +377,12 @@ def _gh_params_for_theta_bin(
         if not np.isfinite(h4):
             h4 = 0.0
 
-        out[icomp] = GHParams(mu=float(mu), sig=float(sig), h3=float(h3), h4=float(h4))
+        out[icomp] = GHParams(
+            mu=float(mu),
+            sig=float(sig),
+            h3=float(h3),
+            h4=float(h4),
+        )
 
     return out
 
@@ -356,7 +400,8 @@ def _sph_vel_to_cart(
     vtheta: np.ndarray,
     vphi: np.ndarray,
 ) -> np.ndarray:
-    """Convert (vr, vtheta, vphi) to (vx, vy, vz) for standard physics convention."""
+    """Convert (vr, vtheta, vphi) to (vx, vy, vz)
+    for standard physics convention."""
     st = np.sin(theta)
     ct = np.cos(theta)
     sp = np.sin(phi)

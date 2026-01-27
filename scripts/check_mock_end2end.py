@@ -6,17 +6,21 @@ Local end-to-end validation of the *intrinsic* scalefree mock generator.
 What is tested
 --------------
 - Density: recovered shell volume density follows r^{-gamma} (up to scaling).
-- Flattening: the (x,z) distribution matches the requested intrinsic axis ratio q.
+- Flattening: the (x,z) distribution matches the requested intrinsic axis
+ratio q.
 - Velocities: the intrinsic velocity components (vr, vtheta, vphi) produced by
-  the mock are consistent with the *angle-averaged* intrinsic VP information from
+  the mock are consistent with the *angle-averaged* intrinsic VP
+  information from
   ScaleFree (vprofile with average=True), even though the mock itself uses
   average=False with theta-binning.
 
 Notes
 -----
 - This script assumes the mock returns *Cartesian* phase-space coordinates.
-- No intermediate transformation to observed (LOS/POSr/POSt) coordinates is used.
-- For the velocity goodness-of-fit curves we use the *average=True* intrinsic VP
+- No intermediate transformation to observed (LOS/POSr/POSt) coordinates
+is used.
+- For the velocity goodness-of-fit curves we use the *average=True*
+intrinsic VP
   gaussian-fit parameters (gauss_V, gauss_sig) and GH moments (h3,h4).
 """
 
@@ -132,13 +136,23 @@ def extract_intrinsic_products(res) -> Dict[str, Any]:
     blocks = getattr(res, "blocks", {}) or {}
     out: Dict[str, Any] = {"vp_rows": {}, "vp_table": {}, "moments": {}}
 
-    # Moments: average=True -> intrinsic_shell_average; average=False -> intrinsic_point
+    # Moments:
+    # average=True -> intrinsic_shell_average;
+    # average=False -> intrinsic_point
     for key in ("intrinsic_shell_average", "intrinsic_point"):
         blk = blocks.get(key)
         if isinstance(blk, dict):
             cols = list(blk.get("columns", []))
             data = blk.get("data")
-            if cols and isinstance(data, np.ndarray) and data.ndim == 2 and data.size:
+            if (
+                cols
+                and isinstance(
+                    data,
+                    np.ndarray,
+                )
+                and data.ndim == 2
+                and data.size
+            ):
                 row = data[0]
                 for name in ("rho", "vphi", "vr2", "vth2", "vphi2", "beta"):
                     if name in cols:
@@ -160,7 +174,13 @@ def extract_intrinsic_products(res) -> Dict[str, Any]:
             i_ic = cols.index("icomp")
 
             def _get(col: str, row: np.ndarray) -> float:
-                return float(row[cols.index(col)]) if col in cols else float("nan")
+                return (
+                    float(
+                        row[cols.index(col)],
+                    )
+                    if col in cols
+                    else float("nan")
+                )
 
             for row in data:
                 ic = int(row[i_ic])
@@ -206,19 +226,40 @@ def balrogo_curve_from_fits(
 
     ret = dyn.mom_likelihood_func(fits, vg, ex, mode="curve")
 
-    if isinstance(ret, np.ndarray) and ret.ndim == 1 and ret.shape[0] == vg.shape[0]:
+    if (
+        isinstance(
+            ret,
+            np.ndarray,
+        )
+        and ret.ndim == 1
+        and ret.shape[0] == vg.shape[0]
+    ):
         return ret.astype(float), "mom_likelihood_func(curve)"
 
     if np.isscalar(ret):
         if h4 >= 0:
             fgrid = dyn.laplace_kernel_pdf(vg, ex, mu, sig, h3, h4)
-            return np.asarray(fgrid, dtype=float), "laplace_kernel_pdf(fallback)"
+            return (
+                np.asarray(
+                    fgrid,
+                    dtype=float,
+                ),
+                "laplace_kernel_pdf(fallback)",
+            )
         else:
             fgrid = dyn.uniform_kernel_pdf(vg, ex, mu, sig, h3, h4)
-            return np.asarray(fgrid, dtype=float), "uniform_kernel_pdf(fallback)"
+            return (
+                np.asarray(
+                    fgrid,
+                    dtype=float,
+                ),
+                "uniform_kernel_pdf(fallback)",
+            )
 
     raise RuntimeError(
-        f"Unexpected return type from mom_likelihood_func: {type(ret).__name__}"
+        "Unexpected return"
+        + " type from mom_likelihood_func:"
+        + f" {type(ret).__name__}",
     )
 
 
@@ -226,7 +267,14 @@ def normalize_curve(vg: np.ndarray, fgrid: np.ndarray) -> np.ndarray:
     fgrid = np.asarray(fgrid, dtype=float)
     if fgrid.ndim != 1 or fgrid.shape[0] != vg.shape[0]:
         return fgrid
-    area = np.trapezoid(fgrid, vg) if hasattr(np, "trapezoid") else np.trapz(fgrid, vg)
+    area = (
+        np.trapezoid(fgrid, vg)
+        if hasattr(np, "trapezoid")
+        else np.trapz(
+            fgrid,
+            vg,
+        )
+    )
     if np.isfinite(area) and area > 0:
         return fgrid / area
     return fgrid
@@ -239,7 +287,9 @@ def normalize_curve(vg: np.ndarray, fgrid: np.ndarray) -> np.ndarray:
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Local scalefree intrinsic mock check (6D Cartesian output)."
+        description="Local scalefree"
+        + "intrinsic mock check"
+        + " (6D Cartesian output)."
     )
     p.add_argument("--n_dens", type=int, default=8000)
     p.add_argument("--n_vel", type=int, default=12000)
@@ -312,14 +362,21 @@ def main() -> None:
         row = prod["vp_rows"].get(ic, {})
         if row:
             print(
-                f"icomp={ic}: gauss_V={row['gauss_V']:.6g}, gauss_sig={row['gauss_sig']:.6g}, h3={row['h3']:.6g}, h4={row['h4']:.6g}"
+                f"icomp={ic}:"
+                + f" gauss_V={row['gauss_V']:.6g},"
+                + f" gauss_sig={row['gauss_sig']:.6g},"
+                + f" h3={row['h3']:.6g},"
+                + f" h4={row['h4']:.6g}"
             )
         else:
             print(f"icomp={ic}: (missing)")
 
     # Reference mean/sigma from gaussian VP fits
     mu_ref = {
-        ic: float(prod["vp_rows"].get(ic, {}).get("gauss_V", 0.0)) for ic in (1, 2, 3)
+        ic: float(
+            prod["vp_rows"].get(ic, {}).get("gauss_V", 0.0),
+        )
+        for ic in (1, 2, 3)
     }
     sig_ref = {
         ic: float(prod["vp_rows"].get(ic, {}).get("gauss_sig", float("nan")))
@@ -348,9 +405,18 @@ def main() -> None:
     rho_th_scaled = rho_th * (rho_hat[k0] / rho_th[k0])
 
     fig = plt.figure()
-    plt.loglog(rmid, rho_hat, marker="o", linestyle="none", label="Mock: shell rho(r)")
     plt.loglog(
-        rmid, rho_th_scaled, linestyle="-", label=r"Analytic: $r^{-\gamma}$ (scaled)"
+        rmid,
+        rho_hat,
+        marker="o",
+        linestyle="none",
+        label="Mock: shell rho(r)",
+    )
+    plt.loglog(
+        rmid,
+        rho_th_scaled,
+        linestyle="-",
+        label=r"Analytic: $r^{-\gamma}$ (scaled)",
     )
     plt.xlabel("3D radius r")
     plt.ylabel("Volume density (arb.)")
@@ -398,7 +464,11 @@ def main() -> None:
     plt.ylabel("z")
     plt.title(f"Flattening sanity check (q={q0})")
     plt.legend()
-    fig.savefig(outdir / "flattening_overlay.png", dpi=200, bbox_inches="tight")
+    fig.savefig(
+        outdir / "flattening_overlay.png",
+        dpi=200,
+        bbox_inches="tight",
+    )
     plt.close(fig)
 
     # ------------------------------------------------------------------
@@ -434,7 +504,7 @@ def main() -> None:
             bins=int(args.hist_bins),
             density=True,
             alpha=0.35,
-            label="Mock histogram (theta-binned)",
+            label="Mock histogram",
         )
 
         # Optional vp_table overlay
@@ -445,7 +515,7 @@ def main() -> None:
                 vg_tab,
                 vpg_tab,
                 linewidth=2,
-                label="ScaleFree vp_table (avg=True; normalized)",
+                label="ScaleFree vp_table",
             )
 
         # BALRoGO analytic curve from average=True gaussian+GH fits
@@ -470,19 +540,22 @@ def main() -> None:
                 fgrid, tag = balrogo_curve_from_fits(dyn, fits, vg)
                 fgrid = normalize_curve(vg, fgrid)
 
-                plt.plot(
-                    vg, fgrid, linewidth=2, label=f"BALRoGO curve (avg fits; {tag})"
-                )
+                plt.plot(vg, fgrid, linewidth=2, label="BALRoGO curve")
                 plt.axvline(mu, linewidth=1.0, linestyle="--", label="gauss_V")
 
         plt.xlabel(f"{comp_label[ic]} (icomp={ic})")
         plt.ylabel("PDF")
-        plt.xlim(-5, 5)
+        plt.xlim(-3, 3)
         plt.title(
-            f"Intrinsic velocity check: {comp_label[ic]} (theta-binned mock vs avg-fit curve)"
+            f"Intrinsic velocity check: {comp_label[ic]}"
+            + " (theta-binned mock vs avg-fit curve)",
         )
-        plt.legend()
-        fig.savefig(outdir / f"velocity_icomp{ic}.png", dpi=200, bbox_inches="tight")
+        plt.legend(loc=1)
+        fig.savefig(
+            outdir / f"velocity_icomp{ic}.png",
+            dpi=200,
+            bbox_inches="tight",
+        )
         plt.close(fig)
 
     print(f"\nDone. Outputs saved in: {outdir}")

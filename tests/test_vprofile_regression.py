@@ -207,6 +207,7 @@ def test_vprofile_regression(
         vp_reg_param=1.0,
         parse_stdout_fallback=False,
         debug_prompts=False,
+        _skip_df1_beta_correction=True,
     )
 
     cases = {
