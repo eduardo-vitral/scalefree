@@ -189,6 +189,8 @@ def extract_intrinsic_products(res) -> Dict[str, Any]:
                     "gauss_sig": _get("gauss_sig", row),
                     "h3": _get("h3", row),
                     "h4": _get("h4", row),
+                    "true_V": _get("true_V", row),
+                    "true_sig": _get("true_sig", row),
                 }
 
     # vp_table: for intrinsic VPs, parser stores these under vp_table_intrinsic
@@ -317,11 +319,11 @@ def main() -> None:
     # ------------------------------------------------------------------
     model = dict(
         potential=2,
-        gamma=3.0,
-        q=0.6,
-        df=2,
-        beta=-0.2,
-        s=0.0,
+        gamma=2.0,
+        q=0.8,
+        df=1,
+        beta=0.1,
+        s=0.5,
         t=0.0,
     )
 
@@ -362,12 +364,13 @@ def main() -> None:
         row = prod["vp_rows"].get(ic, {})
         if row:
             print(
-                f"icomp={ic}:"
+                f"\nicomp={ic}:"
                 + f" gauss_V={row['gauss_V']:.6g},"
                 + f" gauss_sig={row['gauss_sig']:.6g},"
                 + f" h3={row['h3']:.6g},"
                 + f" h4={row['h4']:.6g}"
             )
+            print(f" true_V={row['true_V']:.6g}," + f" true_sig={row['true_sig']:.6g}")
         else:
             print(f"icomp={ic}: (missing)")
 

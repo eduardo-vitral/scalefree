@@ -30,7 +30,8 @@ test:
   script:
     - apt-get update
     - apt-get install -y --no-install-recommends gfortran
-    - gfortran -O2 -std=legacy -o fortran_src/scalefree.e fortran_src/scalefree.f
+    - rm -f fortran_src/scalefree.e
+    - gfortran -O2 -std=legacy -ffixed-line-length-none -Wline-truncation -o fortran_src/scalefree.e fortran_src/scalefree.f
     - poetry run pytest -q
 
 build:
