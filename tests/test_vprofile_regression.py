@@ -63,6 +63,44 @@ def _parse_fortran_float(tok: str) -> Optional[float]:
         return None
 
 
+# -----------------------------------------------------------------------------
+# Tokenization helpers
+# -----------------------------------------------------------------------------
+# NOTE:
+# The Fortran backend prints some numeric tables in fixed-width formats like:
+#   (I3,1X,6E24.16,1X,7F10.5)
+# Those formats do NOT guarantee whitespace between adjacent fields. On some
+# compilers/platforms, two consecutive numbers can become "glued" (e.g.
+# '0.1234567890123456E+00-0.1111111111111111E+00'), which breaks naive
+# `str.split()` tokenization. The regex below extracts float-like substrings
+# even when fields are adjacent.
+
+_FLOAT_FIND_RE = re.compile(
+    r"[+-]?(?:\d+\.\d*|\d*\.\d+|\d+)(?:[eEdD][+-]?\d+|[+-]\d+)?"
+)
+
+
+def _tokenize_relaxed(line: str) -> list[str]:
+    """Tokenize a vprofile numeric row robustly.
+
+    Keeps the leading integer index (if present) and then extracts all
+    subsequent numeric fields using a regex, tolerating adjacent fields.
+    """
+    s = line.rstrip()
+    if not s:
+        return []
+
+    # Preserve leading integer row id when present
+    m = re.match(r"^\s*([+-]?\d+)\s+(.*)$", s)
+    if m:
+        head = [m.group(1)]
+        rest = m.group(2)
+        nums = _FLOAT_FIND_RE.findall(rest)
+        return head + nums
+
+    return _FLOAT_FIND_RE.findall(s)
+
+
 def _sig_tol(x: float, sig: int, factor: float) -> float:
     """Absolute tolerance corresponding to ~sig significant digits."""
     ax = abs(x)
@@ -130,16 +168,22 @@ def _text_equal_sig(
     for i, (rln, gln) in enumerate(zip(ref_lines, got_lines), start=1):
         rtoks = rln.split()
         gtoks = gln.split()
+
+        # If naive whitespace tokenization disagrees (common with fixed-width
+        # Fortran formats), fall back to a relaxed numeric tokenizer.
         if len(rtoks) != len(gtoks):
-            return (
-                False,
-                "Token count differs at "
-                f"line {i}: "
-                f"ref={len(rtoks)} "
-                f"got={len(gtoks)}\n"
-                f"ref: {rln}\n"
-                f"got: {gln}",
-            )
+            rt_rel = _tokenize_relaxed(rln)
+            gt_rel = _tokenize_relaxed(gln)
+            if rt_rel and gt_rel and (len(rt_rel) == len(gt_rel)):
+                rtoks, gtoks = rt_rel, gt_rel
+            else:
+                return (
+                    False,
+                    "Token count differs at line "
+                    f"{i}: ref={len(rtoks)} got={len(gtoks)}\n"
+                    f"ref: {rln}\n"
+                    f"got: {gln}",
+                )
         for j, (rt, gt) in enumerate(zip(rtoks, gtoks), start=1):
             ra = _parse_fortran_float(rt)
             ga = _parse_fortran_float(gt)

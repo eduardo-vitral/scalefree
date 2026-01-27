@@ -293,7 +293,7 @@ def main() -> None:
     )
     p.add_argument("--n_dens", type=int, default=8000)
     p.add_argument("--n_vel", type=int, default=12000)
-    p.add_argument("--nbins", type=int, default=36)
+    p.add_argument("--nbins", type=int, default=90)
     p.add_argument("--hist_bins", type=int, default=80)
     p.add_argument("--outdir", type=str, default="mock_check_outputs")
     p.add_argument("--seed", type=int, default=42)
@@ -317,11 +317,11 @@ def main() -> None:
     # ------------------------------------------------------------------
     model = dict(
         potential=2,
-        gamma=2.0,
-        q=1,
-        df=1,
-        beta=0.0,
-        s=0.5,
+        gamma=3.0,
+        q=0.6,
+        df=2,
+        beta=-0.2,
+        s=0.0,
         t=0.0,
     )
 
@@ -340,7 +340,7 @@ def main() -> None:
         integration=1,
         ngl_or_eps=0,
         algorithm=3,
-        maxmom=20,
+        maxmom=30,
         average=True,
         kinematics="intrinsic",
         usevp=True,
@@ -437,7 +437,7 @@ def main() -> None:
         seed=int(args.seed) + 1,
         rin=0.5,
         rout=50.0,
-        maxmom=20,
+        maxmom=30,
         debug=False,
         exe_path=exe,
     )
@@ -481,7 +481,7 @@ def main() -> None:
         seed=int(args.seed) + 2,
         rin=1.0,
         rout=2.0,
-        maxmom=20,
+        maxmom=30,
         debug=False,
         exe_path=exe,
     )
