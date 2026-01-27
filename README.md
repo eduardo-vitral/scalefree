@@ -36,7 +36,7 @@ Typical uses:
 Utilities to fit Gauss–Hermite coefficients to a velocity-profile file and to evaluate analytic Gauss–Hermite profiles.
 
 ### `mock(...)`
-A convenience routine for generating synthetic 6D samples `(x, y, z, vx, vy, vz)` from a chosen model configuration (internally uses `vprofile()` to obtain GH parameters across angular bins).
+A convenience routine for generating synthetic 6D samples `(x, y, z, vx, vy, vz)` from a chosen model configuration (internally uses `vprofile()` to obtain GH parameters across angular bins). Keep in mind that the underlying formalism is scale-free, so please refer to this [link](./docs/theory/main-method.md) for scaling it back to physical values.
 
 ---
 
@@ -130,19 +130,20 @@ print(gaussh_info)
 print(h_moments["h3"], h_moments["h4"])
 ```
 
-### 3) Generate a simple mock (currently deprecated)
+### 3) Generate a simple mock
 ```python
 from scalefree import mock
 
 X = mock(
-    potential=lambda: 1,
-    gamma=4.0,
+    potential=2,
+    gamma=2.0,
     q=0.9,
-    beta=0.0,
-    inclination=90.0,
+    df=2,
+    beta=-0.1,
+    s=0.2,
+    t=0.0,
     nsamples=10_000,
     nbins=180,
-    usevp=True,
 )
 
 print(X.shape)  # (N, 6): (x, y, z, vx, vy, vz)

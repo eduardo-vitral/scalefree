@@ -329,14 +329,6 @@ def _gh_params_for_theta_bin(
         debug_prompts=debug_prompts,
     )
 
-    # res = runner.vprofile(
-    #     potential=2, gamma=2.0, q=0.608, df=1, beta=0.189, s=0.5, t=0.0,
-    #     inclination=57.1, xi=0.0, theta=0.0,
-    #     integration=1, ngl_or_eps=0, algorithm=3, maxmom=8,
-    #     kinematics="intrinsic", average=False,
-    #     usevp=True, verbose_vp=0,
-    # )
-
     # Primary source: VP gaussian-fit summary
     vpblk = res.blocks.get("vp_intrinsic")
     by = vpblk.get("by_icomp", {}) if isinstance(vpblk, dict) else {}

@@ -320,10 +320,10 @@ def main() -> None:
     model = dict(
         potential=2,
         gamma=2.0,
-        q=0.8,
-        df=1,
-        beta=0.1,
-        s=0.5,
+        q=0.9,
+        df=2,
+        beta=-0.1,
+        s=0.2,
         t=0.0,
     )
 

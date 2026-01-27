@@ -1,4 +1,5 @@
 stages:
+  - lint
   - test
   - build
 
@@ -19,8 +20,16 @@ cache:
     - .cache/pypoetry/
     - .cache/pip/
 
-test:
+lint:
+  stage: lint
+  script: make lint
   image: python:3.11
+
+test:
+  image: python:${PY_VER}
+  parallel:
+    matrix:
+      - PY_VER: ["3.10", "3.11", "3.12"]
   stage: test
   before_script:
     - python -V

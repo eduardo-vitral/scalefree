@@ -21,7 +21,7 @@ __all__ = [
     "ScaleFreeRunner",
     "ScaleFreeResult",
     "mock",
-    "hermite",       # module
-    "hermite_fit",   # function (optional but useful)
+    "hermite",  # module
+    "hermite_fit",  # function (optional but useful)
     "__version__",
 ]
