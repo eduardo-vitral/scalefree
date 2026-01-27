@@ -211,6 +211,12 @@ def main():
     else:
         exe_path = Path(args.exe).expanduser().resolve()
 
+    if exe_path.exists():
+        print(
+            f"[quick_user_run] Removing existing backend exe to force rebuild: {exe_path}"
+        )
+        exe_path.unlink()
+
     runner = ScaleFreeRunner(exe_path=exe_path)
 
     usevp = not args.no_vp

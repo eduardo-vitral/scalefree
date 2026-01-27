@@ -217,14 +217,15 @@ def _backend_cache_key() -> str:
     ver = _installed_pkg_version()
     src = _packaged_fortran_source()
     if src.exists():
-        return f"{ver}-{_file_sha256_short(src)}"
-    return ver
+        return f"{ver}-{_file_sha256_short(src)}-ffixedlln"
+    return f"{ver}-ffixedlln"
 
 
 def _default_cached_exe() -> Path:
     exe_name = "scalefree.e" if os.name != "nt" else "scalefree.exe"
     key = _backend_cache_key()
-    # Versioned+hashed cache folder prevents stale executables after pip upgrades
+    # Versioned+hashed cache folder prevents
+    # stale executables after pip upgrades
     return _user_cache_dir() / "backend" / key / exe_name
 
 
@@ -246,7 +247,15 @@ def _compile_backend(*, exe: Path, src: Path) -> None:
 
     exe.parent.mkdir(parents=True, exist_ok=True)
 
-    cmd = ["gfortran", "-O2", "-std=legacy", "-o", str(exe), str(src)]
+    cmd = [
+        "gfortran",
+        "-O2",
+        "-std=legacy",
+        "-ffixed-line-length-none",
+        "-o",
+        str(exe),
+        str(src),
+    ]
     try:
         subprocess.run(cmd, check=True, capture_output=True, text=True)
     except subprocess.CalledProcessError as e:
@@ -448,7 +457,10 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
                 data.append([_to_float(x) for x in row.split()])
                 i += 1
             label = parts[2].lower() if len(parts) >= 3 else "iproj"
-            vp_table_key = "vp_table_intrinsic" if label == "icomp" else "vp_table"
+            if label == "icomp":
+                vp_table_key = "vp_table_intrinsic"
+            else:
+                vp_table_key = "vp_table"
             blocks.setdefault(vp_table_key, {})[iproj] = {
                 "columns": cols if cols else ["v", "vp"],
                 "data": np.array(data, dtype=float),
@@ -509,8 +521,10 @@ def parse_scalefree_output(text: str) -> Dict[str, Any]:
                             break
                         tdata.append([_to_float(x) for x in r2.split()])
                         i += 1
-
-                    vp_table_key = "vp_table" if kind == "vp" else "vp_table_intrinsic"
+                    if kind == "vp":
+                        vp_table_key = "vp_table"
+                    else:
+                        vp_table_key = "vp_table_intrinsic"
                     blocks.setdefault(vp_table_key, {})[iproj] = {
                         "columns": tcols if tcols else ["v", "vp"],
                         "data": np.array(tdata, dtype=float),
@@ -767,8 +781,6 @@ def _extract_last_intrinsic_block_from_stdout(stdout_text: str) -> str:
     return "\n".join(out) + "\n"
 
 
-
-
 # ---------------------------------------------------------------------
 # DF=1 beta correction (internal pre-processing)
 # ---------------------------------------------------------------------
@@ -791,7 +803,8 @@ def _intrinsic_shell_average_beta(blocks: Dict[str, Any]) -> float:
             "attempting DF=1 beta correction."
         )
 
-    # Columns are expected to include 'beta' in the DF=1 averaged intrinsic mode
+    # Columns are expected to include 'beta'
+    # in the DF=1 averaged intrinsic mode
     try:
         j = [c.lower() for c in cols].index("beta")
     except ValueError as e:
@@ -988,6 +1001,7 @@ def _df1_correct_beta(
         "input parameters."
     )
 
+
 # ---------------------------------------------------------------------
 # Prompt-driven runner
 # ---------------------------------------------------------------------
@@ -1075,7 +1089,6 @@ class ScaleFreeRunner:
                 timeout_s=int(timeout_s),
             )
             beta = float(beta_corrected)
-
 
         # ---------------------------------------------------------
         # Output handling
@@ -1228,8 +1241,10 @@ class ScaleFreeRunner:
             # Keep matching conservative to avoid hijacking the verbosity
             # question above.
             lline = line.lower()
-            if ("vp" in lline) and ("?" in lline) and (
-                ("calculate" in lline) or ("use" in lline)
+            if (
+                ("vp" in lline)
+                and ("?" in lline)
+                and (("calculate" in lline) or ("use" in lline))
             ):
                 return "1" if usevp else "0"
 
@@ -1357,7 +1372,12 @@ class ScaleFreeRunner:
                 # Respect the public API: only expose VP products when
                 # explicitly requested via usevp=True.
                 if not usevp:
-                    for k in ("vp", "vp_table", "vp_intrinsic", "vp_table_intrinsic"):
+                    for k in (
+                        "vp",
+                        "vp_table",
+                        "vp_intrinsic",
+                        "vp_table_intrinsic",
+                    ):
                         blocks.pop(k, None)
 
                 if not blocks:

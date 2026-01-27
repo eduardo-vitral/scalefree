@@ -251,21 +251,21 @@ def _gh_params_for_theta_bin(
 ) -> Dict[int, GHParams]:
     """Compute GH parameters (mu,sig,h3,h4) for (v_r, v_th, v_phi) at a theta bin."""
 
-    print("\n\nChecking quantities:")
-    print(potential, type(potential), 2)
-    print(float(gamma), type(float(gamma)), 2)
-    print(float(q), type(float(q)), 0.608)
-    print(int(df), type(int(df)), 1)
-    print(float(beta), type(float(beta)), 0.189)
-    print(float(s), type(float(s)), 0.5)
-    print(float(t), type(float(t)), 0.0)
-    print(57.1)
-    print(float(xi), float(xi), 0.0)
-    print(float(theta_deg), float(theta_deg), 0.0)
-    print(int(integration), type(int(integration)), 1)
-    print(float(ngl_or_eps), type(float(ngl_or_eps)), 0)
-    print(3)
-    print(int(maxmom), type(int(maxmom)), 8)
+    # print("\n\nChecking quantities:")
+    # print(potential, type(potential), 2)
+    # print(float(gamma), type(float(gamma)), 2)
+    # print(float(q), type(float(q)), 0.608)
+    # print(int(df), type(int(df)), 1)
+    # print(float(beta), type(float(beta)), 0.189)
+    # print(float(s), type(float(s)), 0.5)
+    # print(float(t), type(float(t)), 0.0)
+    # print(57.1)
+    # print(float(xi), float(xi), 0.0)
+    # print(float(theta_deg), float(theta_deg), 0.0)
+    # print(int(integration), type(int(integration)), 1)
+    # print(float(ngl_or_eps), type(float(ngl_or_eps)), 0)
+    # print(3)
+    # print(int(maxmom), type(int(maxmom)), 8)
     # Intrinsic kinematics: inclination is not used by Fortran for iwhat=0.
     res = runner.vprofile(
         potential=potential,
@@ -275,20 +275,19 @@ def _gh_params_for_theta_bin(
         beta=float(beta),
         s=float(s),
         t=float(t),
-        inclination=57.1,
+        inclination=90,
         xi=float(xi),
-        # theta=float(theta_deg),
-        theta=0,
+        theta=float(theta_deg),
         integration=int(integration),
         ngl_or_eps=float(ngl_or_eps),
         algorithm=3,
+        vp_smooth_eps=float(vp_smooth_eps),
         maxmom=int(maxmom),
-        # maxmom=6,
         average=False,
         kinematics="intrinsic",
         usevp=True,
-        verbose_vp=0,
-        # debug_prompts=False,
+        verbose_vp=verbose_vp,
+        debug_prompts=debug_prompts,
     )
 
     # res = runner.vprofile(

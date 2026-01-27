@@ -268,9 +268,9 @@ def main() -> None:
     model = dict(
         potential=2,
         gamma=2.0,
-        q=0.608,
+        q=1,
         df=1,
-        beta=0.189,
+        beta=0.0,
         s=0.5,
         t=0.0,
     )
@@ -290,7 +290,7 @@ def main() -> None:
         integration=1,
         ngl_or_eps=0,
         algorithm=3,
-        maxmom=10,
+        maxmom=20,
         average=True,
         kinematics="intrinsic",
         usevp=True,
@@ -477,6 +477,7 @@ def main() -> None:
 
         plt.xlabel(f"{comp_label[ic]} (icomp={ic})")
         plt.ylabel("PDF")
+        plt.xlim(-5, 5)
         plt.title(
             f"Intrinsic velocity check: {comp_label[ic]} (theta-binned mock vs avg-fit curve)"
         )
