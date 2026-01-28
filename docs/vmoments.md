@@ -271,7 +271,7 @@ This mirrors the repository smoke-test behaviour (see `scripts/quick_user_run.py
 from pathlib import Path
 from scalefree.vmoments import ScaleFreeRunner
 
-runner = ScaleFreeRunner(exe_path=Path("fortran_src/scalefree.e"))
+runner = ScaleFreeRunner()
 
 res = runner.vprofile(
     potential=2, gamma=2.0, q=0.608, df=1, beta=0.189, s=0.5, t=0.0,
