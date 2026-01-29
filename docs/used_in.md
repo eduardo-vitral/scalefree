@@ -18,4 +18,6 @@ Below is the list of works that (to our knowledge) have used this package so far
 
 - [van der Marel et al. (2000) — AJ](https://ui.adsabs.harvard.edu/abs/2000AJ....119.2038V/abstract).
 
+- [Cretton et al. (1999) — AJSS](https://ui.adsabs.harvard.edu/abs/1999ApJS..124..383C/abstract).
+
 - [de Bruijne et al. (1996) — MNRAS](https://ui.adsabs.harvard.edu/abs/1996MNRAS.282..909D/abstract).
