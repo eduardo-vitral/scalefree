@@ -165,7 +165,7 @@ To keep this README short, more detailed guides are intended to live under `docs
 
 ## References and citation guidance
 
-If you use this code in research, please cite the foundational scale-free modelling reference and any additional methodological references relevant to your workflow.
+If you use this code in research, please cite the two works below and let us know so you can add your publication to [this list](./docs/used_in.md).
 
 ### Core scale-free models (foundational)
 - de Bruijne, van der Marel & de Zeeuw (1996), *MNRAS*, 282, 909–925. arXiv: astro-ph/9601044
@@ -223,14 +223,14 @@ If you use this code in research, please cite the foundational scale-free modell
 
     >1994-1995 :\
         &emsp; testing and application of code\
-    address   : Sterrewacht Leiden\
-                Postbus 9513\
-                2300 RA Leiden\
-                The Netherlands\
-                Tel : (+31) 71 5275878\
-                Fax : (+31) 71 5275819\
-                e-mail   : debruyne@strw.LeidenUniv.nl\
-                homepage : http://www.strw.leidenuniv.nl/~debruyne/
+    address   : Scientific Support Oﬃce\
+                Directorate of Science\
+                European Space Research and Technology Centre (ESA/ESTEC)\
+                Keplerlaan 1\
+                2201AZ, Noordwijk\
+                The Netherlands
+                e-mail   : jos.de.bruijne@cosmos.esa.int \
+                homepage : https://www.cosmos.esa.int/web/personal-profiles/jos-de-bruijne
 
 * Eduardo Vitral,
 
@@ -238,7 +238,10 @@ If you use this code in research, please cite the foundational scale-free modell
         &emsp; development of the Python interface\
         &emsp; implementation of plane-of-sky routines\
         &emsp; testing and application of code\
-    address   : Royal Observatory of Edinburgh\
-                Edinburgh, UK\
+    address   : Institute for Astronomy\
+                University of Edinburgh\
+                Royal Observatory, Blackford Hill\
+                Edinburgh EH9 3HJ\
+                United Kingdom\
                 e-mail   : eduardo.vitral@roe.ac.uk\
                 homepage : https://eduardo-vitral.github.io
