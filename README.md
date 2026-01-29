@@ -171,7 +171,7 @@ If you use this code in research, please cite the two works below and let us kno
 - de Bruijne, van der Marel & de Zeeuw (1996), *MNRAS*, 282, 909–925. arXiv: astro-ph/9601044
 
 ### Plane of sight moments equations
-- Vitral et al. (2024), *ApJ*, 970, 1. DOI: 10.3847/1538-4357/ad571c. aeXiv: astro-ph/2407.07769
+- Vitral et al. (2024), *ApJ*, 970, 1. DOI: 10.3847/1538-4357/ad571c. arXiv: astro-ph/2407.07769
 
 ### BibTeX (copy/paste)
 ```bibtex
