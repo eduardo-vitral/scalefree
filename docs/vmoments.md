@@ -38,8 +38,8 @@ res = runner.vprofile(
     beta=0.189,         # anisotropy parameter (1 - ⟨v_tan²⟩/⟨v_rad²⟩)
     s=0.5, t=0.0,       # odd part parameters
     inclination=57.1,   # degrees
-    xi=0.0,             # degrees, projected-plane angle (projected modes only)
-    theta=0.0,          # degrees, meridional-plane angle (intrinsic point only)
+    xi=0.0,             # degrees, projected-plane angle (projected modes only, with xi = 0 at major axis)
+    theta=0.0,          # degrees, meridional-plane angle (intrinsic point only, with theta = 0 at symmetry axis)
 
     # numerical controls
     integration=1,      # 0=Romberg, 1=Gauss–Legendre
