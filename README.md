@@ -82,7 +82,7 @@ res = vprofile(
     t=0.0,
     inclination=60.0,  # degrees
     xi=0.0,            # degrees on projected plane (0 = major axis)
-    theta=0.0,         # degrees (used only for intrinsic runs; safe to keep)
+    theta=0.0,         # degrees (used only for intrinsic runs; 0 = symmetry axis)
     usevp=True,        # set False if you only want moments
 )
 
